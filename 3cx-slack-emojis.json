@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "emojis": {
+    "ah_ultime": {
+      "url": "emojis/ah_ultime.gif",
+      "label": "AH !!!"
+    },
+    "ouvrier_beau": {
+      "url": "emojis/ouvrier_beau.jpg",
+      "label": "Ouvrier beau"
+    },
+    "heureux": {
+      "url": "emojis/heureux.png",
+      "label": "Heureux"
+    },
+    "ah": {
+      "url": "emojis/ah.png",
+      "label": "Ah!"
+    },
+    "bruce": {
+      "url": "emojis/bruce.jpg",
+      "label": "Bruce"
+    },
+    "gaga": {
+      "url": "emojis/gaga.jpg",
+      "label": "euh"
+    },
+    "genius_o": {
+      "url": "emojis/genius_o.jpg",
+      "label": "Genius"
+    },
+    "hmm": {
+      "url": "emojis/hmm.png",
+      "label": "Hmm.."
+    },
+    "oshit": {
+      "url": "emojis/oshit.png",
+      "label": "oshit"
+    },
+    "oshit2": {
+      "url": "emojis/oshit2.png",
+      "label": "oSHIT!"
+    },
+    "oyeah": {
+      "url": "emojis/oyeah.png",
+      "label": "Feels good man"
+    },
+    "perfect": {
+      "url": "emojis/perfect.png",
+      "label": "Perfect"
+    },
+    "sadman": {
+      "url": "emojis/sadman.png",
+      "label": "tristesse"
+    },
+    "spoderman": {
+      "url": "emojis/spoderman.jpg",
+      "label": "Spoderman !"
+    },
+    "yuk": {
+      "url": "emojis/yuk.png",
+      "label": "Eww"
+    }
+  }
+}
