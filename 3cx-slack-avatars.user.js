@@ -35,7 +35,7 @@
    * Une fois cette URL renseignée dans le script distribué à l'équipe,
    * tous les utilisateurs reçoivent les mêmes emojis automatiquement.
    */
-  const CUSTOM_EMOJI_MANIFEST_URL = "";
+  const CUSTOM_EMOJI_MANIFEST_URL = "https://bricewillus.github.io/3CX-modern-theme/3cx-slack-emojis.json";
 
   /*
    * Variante sans manifeste : les définitions placées ici sont directement
