@@ -351,12 +351,12 @@
       chat-message .message-text-internal .${CUSTOM_EMOJI_CLASS} {
         display: inline-block !important;
         box-sizing: border-box !important;
-        width: 32px !important;
-        min-width: 32px !important;
-        max-width: 32px !important;
-        height: 32px !important;
-        min-height: 32px !important;
-        max-height: 32px !important;
+        width: 22px !important;
+        min-width: 22px !important;
+        max-width: 22px !important;
+        height: 22px !important;
+        min-height: 22px !important;
+        max-height: 22px !important;
         margin: -5px 2px -5px !important;
         padding: 0 !important;
         object-fit: contain !important;
