@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.3.0
-// @description  Ajoute les noms, avatars, emojis partagés, animations et contrôles Slack à 3CX.
+// @version      1.4.1
+// @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
 // @run-at       document-idle
@@ -25,6 +25,10 @@
   const STORAGE_THEME = "decSlackTheme";
   const STORAGE_ACCENT = "decSlackAccent";
   const STORAGE_EMOJI_MANIFEST = "decSlackEmojiManifest";
+  const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
+  const STORAGE_CHAT_HEADER_COLLAPSED = "decSlackChatHeaderCollapsed";
+  const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
+  const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
   const CUSTOM_EMOJI_REFRESH_MS = 5 * 60 * 1000;
 
@@ -51,6 +55,17 @@
   let initialMessageScan = true;
   let suppressAnimationsUntil = performance.now() + 1200;
   let customEmojiRevision = 0;
+  let customNotificationSound = null;
+  let notificationAudio = null;
+  let lastNotificationAt = 0;
+  let cachedChatSessionId = (() => {
+    try {
+      return window.sessionStorage.getItem(STORAGE_CHAT_SESSION_ID) || "";
+    } catch {
+      return "";
+    }
+  })();
+  let originalPreviewObserver = null;
 
   if (window[SCRIPT_MARKER]) {
     return;
@@ -122,6 +137,12 @@
     theme:
       readSetting(STORAGE_THEME, "dark") === "light" ? "light" : "dark",
     accent: normalizeHex(readSetting(STORAGE_ACCENT, "#4a154b")),
+    searchCollapsed:
+      readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
+    chatHeaderCollapsed:
+      readSetting(STORAGE_CHAT_HEADER_COLLAPSED, "false") === "true",
+    notificationSound:
+      readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
   };
 
   function applyAccentVariables() {
@@ -180,6 +201,11 @@
       "[data-dec-control='layout']",
     );
     const themeButton = controls.querySelector("[data-dec-control='theme']");
+    const searchButton = controls.querySelector("[data-dec-control='search']");
+    const chatHeaderButton = controls.querySelector(
+      "[data-dec-control='chat-header']",
+    );
+    const soundButton = controls.querySelector("[data-dec-control='sound']");
     const colorInput = controls.querySelector("[data-dec-control='accent']");
 
     const splitLayout = preferences.layout === "split";
@@ -198,6 +224,41 @@
       ? "Passer au thème sombre"
       : "Passer au thème clair";
 
+    searchButton.dataset.active = String(preferences.searchCollapsed);
+    searchButton.setAttribute(
+      "aria-pressed",
+      String(preferences.searchCollapsed),
+    );
+    searchButton.textContent = preferences.searchCollapsed ? "⌄" : "⌕";
+    searchButton.title = preferences.searchCollapsed
+      ? "Déplier la barre de recherche"
+      : "Replier la barre de recherche";
+
+    chatHeaderButton.dataset.active = String(
+      preferences.chatHeaderCollapsed,
+    );
+    chatHeaderButton.setAttribute(
+      "aria-pressed",
+      String(preferences.chatHeaderCollapsed),
+    );
+    chatHeaderButton.textContent = preferences.chatHeaderCollapsed ? "▱" : "▤";
+    chatHeaderButton.title = preferences.chatHeaderCollapsed
+      ? "Déplier l’en-tête de la conversation"
+      : "Replier l’en-tête de la conversation";
+
+    soundButton.dataset.active = String(preferences.notificationSound);
+    soundButton.dataset.available = String(Boolean(customNotificationSound));
+    soundButton.setAttribute(
+      "aria-pressed",
+      String(preferences.notificationSound),
+    );
+    soundButton.textContent = preferences.notificationSound ? "🔔" : "🔕";
+    soundButton.title = customNotificationSound
+      ? preferences.notificationSound
+        ? "Désactiver le son personnalisé"
+        : "Activer et tester le son personnalisé"
+      : "Aucun son personnalisé dans le manifeste";
+
     colorInput.value = preferences.accent;
     colorInput.title = `Couleur du thème : ${preferences.accent}`;
   }
@@ -211,6 +272,14 @@
     root.classList.toggle(
       "dec-slack-theme-light",
       preferences.theme === "light",
+    );
+    root.classList.toggle(
+      "dec-slack-search-collapsed",
+      preferences.searchCollapsed,
+    );
+    root.classList.toggle(
+      "dec-slack-chat-header-collapsed",
+      preferences.chatHeaderCollapsed,
     );
     applyAccentVariables();
     updateControls();
@@ -239,6 +308,24 @@
         data-dec-control="theme"
         aria-label="Changer le thème clair ou sombre"
       ></button>
+      <button
+        type="button"
+        class="dec-slack-control-button"
+        data-dec-control="search"
+        aria-label="Replier ou déplier la barre de recherche"
+      ></button>
+      <button
+        type="button"
+        class="dec-slack-control-button"
+        data-dec-control="chat-header"
+        aria-label="Replier ou déplier l’en-tête de la conversation"
+      ></button>
+      <button
+        type="button"
+        class="dec-slack-control-button"
+        data-dec-control="sound"
+        aria-label="Activer ou désactiver le son personnalisé"
+      ></button>
       <label
         class="dec-slack-control-button dec-slack-color-control"
         title="Changer la couleur du thème"
@@ -256,6 +343,11 @@
       "[data-dec-control='layout']",
     );
     const themeButton = controls.querySelector("[data-dec-control='theme']");
+    const searchButton = controls.querySelector("[data-dec-control='search']");
+    const chatHeaderButton = controls.querySelector(
+      "[data-dec-control='chat-header']",
+    );
+    const soundButton = controls.querySelector("[data-dec-control='sound']");
     const colorInput = controls.querySelector("[data-dec-control='accent']");
 
     layoutButton.addEventListener("click", () => {
@@ -269,6 +361,44 @@
       preferences.theme = preferences.theme === "light" ? "dark" : "light";
       writeSetting(STORAGE_THEME, preferences.theme);
       applyPreferences();
+    });
+
+    searchButton.addEventListener("click", () => {
+      preferences.searchCollapsed = !preferences.searchCollapsed;
+      writeSetting(
+        STORAGE_SEARCH_COLLAPSED,
+        String(preferences.searchCollapsed),
+      );
+      applyPreferences();
+    });
+
+    chatHeaderButton.addEventListener("click", () => {
+      preferences.chatHeaderCollapsed = !preferences.chatHeaderCollapsed;
+      writeSetting(
+        STORAGE_CHAT_HEADER_COLLAPSED,
+        String(preferences.chatHeaderCollapsed),
+      );
+      applyPreferences();
+    });
+
+    soundButton.addEventListener("click", () => {
+      if (!customNotificationSound) {
+        return;
+      }
+
+      preferences.notificationSound = !preferences.notificationSound;
+      writeSetting(
+        STORAGE_NOTIFICATION_SOUND,
+        String(preferences.notificationSound),
+      );
+      updateControls();
+
+      if (preferences.notificationSound) {
+        playCustomNotification({ preview: true });
+      } else if (notificationAudio) {
+        notificationAudio.pause();
+        notificationAudio.currentTime = 0;
+      }
     });
 
     colorInput.addEventListener("input", () => {
@@ -471,6 +601,103 @@
     });
   }
 
+  function notificationSoundDefinitionFrom(source, baseUrl) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      return null;
+    }
+
+    const entry = source.notificationSound;
+    const rawUrl = typeof entry === "string" ? entry : entry?.url;
+    if (!rawUrl) {
+      return null;
+    }
+
+    try {
+      const url = new URL(String(rawUrl).trim(), baseUrl || window.location.href);
+      const isAudioDataUrl =
+        url.protocol === "data:" && url.href.startsWith("data:audio/");
+      if (
+        url.protocol !== "https:" &&
+        url.protocol !== "http:" &&
+        !isAudioDataUrl
+      ) {
+        return null;
+      }
+
+      const rawVolume =
+        typeof entry === "object" && entry ? Number(entry.volume) : 0.7;
+      const volume = Number.isFinite(rawVolume)
+        ? Math.min(1, Math.max(0, rawVolume))
+        : 0.7;
+      return { url: url.href, volume };
+    } catch {
+      return null;
+    }
+  }
+
+  function notificationSoundDefinitionsAreEqual(first, second) {
+    return (
+      first === second ||
+      (Boolean(first) &&
+        Boolean(second) &&
+        first.url === second.url &&
+        first.volume === second.volume)
+    );
+  }
+
+  function prepareNotificationAudio() {
+    if (!customNotificationSound) {
+      return null;
+    }
+
+    if (
+      !notificationAudio ||
+      notificationAudio.dataset.decSoundUrl !== customNotificationSound.url
+    ) {
+      notificationAudio?.pause();
+      notificationAudio = new Audio(customNotificationSound.url);
+      notificationAudio.dataset.decSoundUrl = customNotificationSound.url;
+      notificationAudio.preload = "auto";
+    }
+
+    notificationAudio.volume = customNotificationSound.volume;
+    return notificationAudio;
+  }
+
+  function playCustomNotification({ preview = false } = {}) {
+    if (
+      !preferences.notificationSound ||
+      !customNotificationSound
+    ) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!preview && now - lastNotificationAt < 750) {
+      return;
+    }
+    lastNotificationAt = now;
+
+    const audio = prepareNotificationAudio();
+    if (!audio) {
+      return;
+    }
+
+    audio.pause();
+    audio.currentTime = 0;
+    const playback = audio.play();
+    if (playback && typeof playback.catch === "function") {
+      playback.catch((error) => {
+        if (preview) {
+          console.warn(
+            "[3CX Slack] Le navigateur n'a pas pu lire le son personnalisé.",
+            error,
+          );
+        }
+      });
+    }
+  }
+
   function updateExistingCustomEmojiImages() {
     document
       .querySelectorAll(`img.${CUSTOM_EMOJI_CLASS}[data-dec-emoji-code]`)
@@ -490,30 +717,56 @@
   }
 
   function applyCustomEmojiManifest(manifest, manifestUrl = "") {
+    const effectiveManifestUrl = manifestUrl || window.location.href;
     const nextDefinitions = customEmojiDefinitionsFrom(
       INLINE_CUSTOM_EMOJIS,
       window.location.href,
     );
     const remoteDefinitions = customEmojiDefinitionsFrom(
       manifest,
-      manifestUrl || window.location.href,
+      effectiveManifestUrl,
+    );
+    const nextNotificationSound = notificationSoundDefinitionFrom(
+      manifest,
+      effectiveManifestUrl,
     );
 
     remoteDefinitions.forEach((definition, code) => {
       nextDefinitions.set(code, definition);
     });
 
-    if (customEmojiMapsAreEqual(customEmojis, nextDefinitions)) {
+    const emojisChanged = !customEmojiMapsAreEqual(
+      customEmojis,
+      nextDefinitions,
+    );
+    const soundChanged = !notificationSoundDefinitionsAreEqual(
+      customNotificationSound,
+      nextNotificationSound,
+    );
+
+    if (!emojisChanged && !soundChanged) {
       return;
     }
 
-    customEmojis.clear();
-    nextDefinitions.forEach((definition, code) => {
-      customEmojis.set(code, definition);
-    });
-    customEmojiRevision += 1;
-    updateExistingCustomEmojiImages();
-    scheduleUpdate();
+    if (emojisChanged) {
+      customEmojis.clear();
+      nextDefinitions.forEach((definition, code) => {
+        customEmojis.set(code, definition);
+      });
+      customEmojiRevision += 1;
+      updateExistingCustomEmojiImages();
+      scheduleUpdate();
+    }
+
+    if (soundChanged) {
+      notificationAudio?.pause();
+      notificationAudio = null;
+      customNotificationSound = nextNotificationSound;
+      if (preferences.notificationSound) {
+        prepareNotificationAudio();
+      }
+      updateControls();
+    }
   }
 
   function readCachedCustomEmojiManifest() {
@@ -977,6 +1230,9 @@
     const ownMessage = Boolean(
       message.querySelector(".message-inner.message-right"),
     );
+    if (!ownMessage) {
+      playCustomNotification();
+    }
     const enterClass = ownMessage ? ENTER_OWN_CLASS : ENTER_OTHER_CLASS;
     message.classList.add(enterClass);
 
@@ -988,6 +1244,147 @@
       once: true,
     });
     window.setTimeout(clearAnimationClass, 700);
+  }
+
+  function currentChatSessionId() {
+    const link = document.querySelector(
+      'a[href*="/MyPhone/downloadChatFile/"][href*="sessionId="]',
+    );
+
+    if (link?.href) {
+      try {
+        const sessionId = new URL(link.href).searchParams.get("sessionId");
+        if (sessionId) {
+          cachedChatSessionId = sessionId;
+          try {
+            window.sessionStorage.setItem(STORAGE_CHAT_SESSION_ID, sessionId);
+          } catch {
+            // La valeur reste disponible en mémoire jusqu'au prochain reload.
+          }
+        }
+      } catch {
+        // Une URL de pièce jointe malformée ne bloque pas les autres aperçus.
+      }
+    }
+
+    return cachedChatSessionId;
+  }
+
+  function originalUrlForPreview(image, sessionId) {
+    const filename =
+      image.closest("a[download]")?.getAttribute("download") || "";
+    if (!/\.(?:png|webp|gif)$/i.test(filename)) {
+      return "";
+    }
+
+    const previewUrl = image.currentSrc || image.src || "";
+    if (
+      !previewUrl.includes("/MyPhone/downloadChatFile/") ||
+      !/\.preview(?:[?#].*)?$/.test(previewUrl)
+    ) {
+      return "";
+    }
+
+    try {
+      const originalUrl = new URL(
+        previewUrl.replace(/\.preview(?:[?#].*)?$/, ""),
+      );
+      if (originalUrl.origin !== window.location.origin) {
+        return "";
+      }
+      originalUrl.searchParams.set("sessionId", sessionId);
+      return originalUrl.href;
+    } catch {
+      return "";
+    }
+  }
+
+  function loadOriginalImagePreview(image) {
+    const originalUrl = image.dataset.decOriginalPreviewUrl || "";
+    if (!originalUrl || image.dataset.decOriginalPreviewState === "loading") {
+      return;
+    }
+
+    image.dataset.decOriginalPreviewState = "loading";
+    const probe = new Image();
+    probe.decoding = "async";
+    probe.onload = () => {
+      if (
+        image.isConnected &&
+        image.dataset.decOriginalPreviewUrl === originalUrl
+      ) {
+        image.srcset = "";
+        image.src = originalUrl;
+        image.dataset.decOriginalPreviewState = "ready";
+      }
+    };
+    probe.onerror = () => {
+      if (image.dataset.decOriginalPreviewUrl === originalUrl) {
+        image.dataset.decOriginalPreviewState = "failed";
+      }
+    };
+    probe.src = originalUrl;
+  }
+
+  function ensureOriginalPreviewObserver() {
+    if (originalPreviewObserver || !("IntersectionObserver" in window)) {
+      return originalPreviewObserver;
+    }
+
+    originalPreviewObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+          originalPreviewObserver.unobserve(entry.target);
+          loadOriginalImagePreview(entry.target);
+        });
+      },
+      {
+        rootMargin: "600px 0px",
+      },
+    );
+    return originalPreviewObserver;
+  }
+
+  function enhanceOriginalImagePreviews() {
+    const sessionId = currentChatSessionId();
+    if (!sessionId) {
+      return;
+    }
+
+    const previewObserver = ensureOriginalPreviewObserver();
+    document
+      .querySelectorAll(
+        'chat-message file-preview a[download] img[src*="/MyPhone/downloadChatFile/"][src*=".preview"]',
+      )
+      .forEach((image) => {
+        const originalUrl = originalUrlForPreview(image, sessionId);
+        if (!originalUrl) {
+          return;
+        }
+
+        if (image.dataset.decOriginalPreviewUrl !== originalUrl) {
+          image.dataset.decOriginalPreviewUrl = originalUrl;
+          image.dataset.decOriginalPreviewState = "pending";
+        }
+
+        if (
+          image.dataset.decOriginalPreviewState === "ready" ||
+          image.dataset.decOriginalPreviewState === "loading" ||
+          image.dataset.decOriginalPreviewState === "failed"
+        ) {
+          return;
+        }
+
+        image.loading = "lazy";
+        if (previewObserver) {
+          previewObserver.observe(image);
+        } else {
+          loadOriginalImagePreview(image);
+        }
+      });
   }
 
   function enhanceVisibleMessages() {
@@ -1003,6 +1400,7 @@
       enhanceMessage(message, profiles);
     });
     enhanceCustomEmojis();
+    enhanceOriginalImagePreviews();
     initialMessageScan = false;
   }
 
