@@ -1,5 +1,9 @@
 {
   "version": 1,
+  "notificationSound": {
+    "url": "sounds/universfield-new-notification-040-493469.mp3",
+    "volume": 1
+  },
   "emojis": {
     "ah_ultime": {
       "url": "emojis/ah_ultime.gif",
