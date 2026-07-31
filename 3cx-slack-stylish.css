@@ -2056,3 +2056,77 @@ chat-message:has(> .message-name):not(:has(+ chat-message)) {
   width: 16px !important;
   height: 16px !important;
 }
+
+/* ==========================================================
+   V10 — APERÇUS TRANSPARENTS, AVATARS ET BANDEAUX RÉTRACTABLES
+   ========================================================== */
+
+/* Le lien qui enveloppe l'image avait son propre fond opaque : il apparaissait
+   à travers les zones transparentes des PNG. */
+chat-message file-preview,
+chat-message file-preview > a,
+chat-message file-preview .border-picrure,
+chat-message file-preview img,
+chat-message preview-text-message,
+chat-message preview-text-message .border-picrure,
+chat-message preview-text-message img {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Avatars des conversations récentes. L'indicateur de statut reste hors du
+   masque afin de ne pas être coupé. */
+chat-item app-avatar,
+chat-item app-avatar .avatar-container,
+chat-item app-avatar .avatar-content {
+  border-radius: 50% !important;
+}
+
+chat-item app-avatar .avatar-content {
+  overflow: hidden !important;
+}
+
+/* Bandeau global avec la recherche. */
+chat-component > .layout-type4 {
+  transition: grid-template-rows 180ms ease !important;
+}
+
+html.dec-slack-search-collapsed chat-component > .layout-type4 {
+  grid-template-rows: 0 minmax(0, 1fr) 0 !important;
+}
+
+html.dec-slack-search-collapsed
+  chat-searcher-component.layout-type4-header {
+  height: 0 !important;
+  min-height: 0 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  border: 0 !important;
+}
+
+/* Bandeau de la conversation avec avatar, appel et visioconférence. */
+#chat-window {
+  transition: grid-template-rows 180ms ease !important;
+}
+
+html.dec-slack-chat-header-collapsed #chat-window {
+  grid-template-rows: 0 minmax(0, 1fr) 2px auto !important;
+}
+
+html.dec-slack-chat-header-collapsed #chat-window > chat-messages-header {
+  height: 0 !important;
+  min-height: 0 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  border: 0 !important;
+}
+
+#dec-slack-controls
+  [data-dec-control="sound"][data-available="false"] {
+  opacity: 0.45 !important;
+  cursor: help !important;
+}
