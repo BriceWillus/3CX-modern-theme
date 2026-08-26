@@ -2838,3 +2838,26 @@ chat-message:not(:has(> .message-name))
   ) {
   display: none !important;
 }
+
+/* ==========================================================
+   V18 — ARRONDI DES AVATARS 3CX ET PASTILLES DE PRÉSENCE
+   ========================================================== */
+
+/* Équivalent stable du sélecteur Angular temporaire
+   .avatar-size-m[_nghost-*] > .avatar-container[_ngcontent-*] > [_ngcontent-*].
+   Il couvre l'avatar principal et la pastille de présence superposée. */
+:is(.avatar-size-s, .avatar-size-m, .avatar-size-l, app-avatar)
+  > .avatar-container
+  > *,
+chat-toast-component .avatar-container > *,
+chat-messages-header .avatar-container > *,
+[data-qa="profile-image"],
+:is(
+  .presence-dot,
+  .presence-indicator,
+  .status-dot,
+  .status-indicator,
+  [data-qa*="presence"]
+) {
+  border-radius: 10px !important;
+}
