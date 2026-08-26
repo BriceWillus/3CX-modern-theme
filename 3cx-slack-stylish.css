@@ -764,10 +764,11 @@ chat-message:has(> .message-name)
   min-height: 36px !important;
 }
 
-/* L'avatar est aligné sur la ligne du vrai nom et le début du message. */
+/* L'avatar reste dans le bloc du message. Une valeur négative le faisait
+   remonter dans l'en-tête lorsque le groupe était en haut de la liste. */
 chat-message:has(> .message-name)
   .message-inner:has(> .message-text.new-sender)::before {
-  top: -19px !important;
+  top: 2px !important;
 }
 
 /* L'heure rejoint la ligne du vrai nom. */
@@ -2106,27 +2107,696 @@ html.dec-slack-search-collapsed
   border: 0 !important;
 }
 
-/* Bandeau de la conversation avec avatar, appel et visioconférence. */
-#chat-window {
-  transition: grid-template-rows 180ms ease !important;
-}
-
-html.dec-slack-chat-header-collapsed #chat-window {
-  grid-template-rows: 0 minmax(0, 1fr) 2px auto !important;
-}
-
-html.dec-slack-chat-header-collapsed #chat-window > chat-messages-header {
-  height: 0 !important;
-  min-height: 0 !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  overflow: hidden !important;
-  pointer-events: none !important;
-  border: 0 !important;
-}
-
 #dec-slack-controls
   [data-dec-control="sound"][data-available="false"] {
   opacity: 0.45 !important;
   cursor: help !important;
+}
+
+/* ==========================================================
+   V11 — APERÇUS D'IMAGES AJUSTÉS À LEUR CONTENU
+   ========================================================== */
+
+/* On ne modifie jamais les dimensions de img : 3CX les utilise pour produire
+   la miniature. Seuls le composant et son cadre intermédiaire sont réduits. */
+chat-message :is(file-preview, preview-text-message):has(img) {
+  display: block !important;
+  box-sizing: border-box !important;
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-right: auto !important;
+  margin-left: 0 !important;
+  vertical-align: top !important;
+}
+
+/* preview-text-message est le rendu qui créait le grand cadre paysage autour
+   de l'image portrait. Son enveloppe pleine largeur épouse maintenant la
+   miniature, sans toucher à la hauteur ou à la largeur calculées de l'image. */
+chat-message preview-text-message:has(img) > *,
+chat-message preview-text-message:has(img) a:has(img),
+chat-message preview-text-message:has(img) .border-picrure {
+  box-sizing: border-box !important;
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Le mode séparé conserve volontairement les aperçus de nos messages à
+   droite. En mode Full, la règle précédente les laisse à gauche. */
+html.dec-slack-layout-split
+  chat-message
+  .message-inner.message-right
+  :is(file-preview, preview-text-message):has(img) {
+  margin-right: 0 !important;
+  margin-left: auto !important;
+}
+
+/* ==========================================================
+   V12 — EN-TÊTE, AUTOCOMPLÉTION EMOJI ET NOTIFICATIONS 3CX
+   ========================================================== */
+
+/* L'en-tête reste toujours présent et n'occupe plus un bandeau opaque. */
+#chat-window {
+  grid-template-rows: auto minmax(0, 1fr) 2px auto !important;
+}
+
+#chat-window > chat-messages-header.dec-slack-conversation-header,
+chat-messages-header.dec-slack-conversation-header {
+  position: relative !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 56px !important;
+  padding: 8px 12px !important;
+  overflow: visible !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  color: var(--slack-ink) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  pointer-events: auto !important;
+}
+
+chat-messages-header.dec-slack-conversation-header .header {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* L'avatar de groupe ou de contact disparaît uniquement de cet en-tête. */
+chat-messages-header.dec-slack-conversation-header app-avatar {
+  display: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: min(52vw, 520px) !important;
+  min-height: 40px !important;
+  margin: 0 auto !important;
+  padding: 8px 16px !important;
+  overflow: hidden !important;
+  color: var(--slack-ink) !important;
+  background: var(--dec-accent-soft) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+  font-weight: 720 !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title:hover {
+  background: var(--dec-accent-own-hover) !important;
+  border-color: var(--dec-accent-hover) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title
+  :is(.text-truncate, span) {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Cellule unique contenant inviter, archiver, appel, visio, etc. */
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-actions {
+  position: absolute !important;
+  z-index: 4 !important;
+  top: 50% !important;
+  right: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  box-sizing: border-box !important;
+  width: max-content !important;
+  max-width: 42vw !important;
+  min-height: 40px !important;
+  margin: 0 !important;
+  padding: 4px 6px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  background: var(--dec-accent-soft) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+  transform: translateY(-50%) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-action {
+  display: grid !important;
+  place-items: center !important;
+  box-sizing: border-box !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--slack-ink) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-action:hover {
+  color: var(--dec-accent-hover) !important;
+  background: var(--dec-accent-ring) !important;
+}
+
+/* Propositions des emojis partagés, ancrées au-dessus du composeur. */
+#dec-slack-emoji-autocomplete {
+  position: fixed !important;
+  z-index: 2147483100 !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important;
+  gap: 4px !important;
+  box-sizing: border-box !important;
+  max-height: min(320px, 42vh) !important;
+  margin: 0 !important;
+  padding: 8px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  color: var(--slack-ink) !important;
+  background: var(--slack-panel) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.34) !important;
+}
+
+#dec-slack-emoji-autocomplete[hidden] {
+  display: none !important;
+}
+
+#dec-slack-emoji-autocomplete .dec-slack-emoji-suggestion {
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) !important;
+  grid-template-rows: auto auto !important;
+  align-items: center !important;
+  gap: 0 8px !important;
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  min-height: 44px !important;
+  margin: 0 !important;
+  padding: 5px 8px !important;
+  color: var(--slack-ink) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  text-align: left !important;
+  cursor: pointer !important;
+}
+
+#dec-slack-emoji-autocomplete
+  .dec-slack-emoji-suggestion:is(:hover, :focus-visible, [data-active="true"]) {
+  background: var(--dec-accent-soft) !important;
+  border-color: var(--dec-accent-border) !important;
+  outline: 0 !important;
+}
+
+#dec-slack-emoji-autocomplete .dec-slack-emoji-suggestion img {
+  grid-column: 1 !important;
+  grid-row: 1 / 3 !important;
+  display: block !important;
+  width: 30px !important;
+  height: 30px !important;
+  object-fit: contain !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+}
+
+#dec-slack-emoji-autocomplete .dec-slack-emoji-suggestion-code {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  font-family: "Cascadia Code", Consolas, monospace !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dec-slack-emoji-autocomplete .dec-slack-emoji-suggestion small {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  color: var(--slack-muted) !important;
+  font-size: 10px !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Popup interne 3CX : toute la bulle déclenche Répondre. */
+chat-toast-component.dec-slack-chat-toast {
+  position: fixed !important;
+  z-index: 2147483200 !important;
+  top: 16px !important;
+  right: 18px !important;
+  bottom: auto !important;
+  left: auto !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: min(360px, calc(100vw - 36px)) !important;
+  min-height: 78px !important;
+  margin: 0 !important;
+  padding: 16px 42px 16px 18px !important;
+  overflow: visible !important;
+  color: var(--slack-ink) !important;
+  background: var(--slack-panel) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.38) !important;
+  cursor: pointer !important;
+  transform: none !important;
+}
+
+chat-toast-component.dec-slack-chat-toast::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 23px !important;
+  right: -9px !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-top: 9px solid transparent !important;
+  border-bottom: 9px solid transparent !important;
+  border-left: 9px solid var(--slack-panel) !important;
+  filter: drop-shadow(2px 0 0 var(--dec-accent-border)) !important;
+  pointer-events: none !important;
+}
+
+chat-toast-component.dec-slack-chat-toast:is(:hover, :focus-visible) {
+  background: var(--slack-surface) !important;
+  border-color: var(--dec-accent-hover) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.44),
+    0 0 0 3px var(--dec-accent-ring) !important;
+  outline: 0 !important;
+}
+
+chat-toast-component.dec-slack-chat-toast > *:not(.dec-slack-chat-toast-close) {
+  max-width: 100% !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+chat-toast-component.dec-slack-chat-toast button.btn-primary,
+chat-toast-component.dec-slack-chat-toast button.btn-gray {
+  display: none !important;
+}
+
+chat-toast-component.dec-slack-chat-toast .dec-slack-chat-toast-close {
+  position: absolute !important;
+  z-index: 3 !important;
+  top: 7px !important;
+  right: 7px !important;
+  display: grid !important;
+  place-items: center !important;
+  box-sizing: border-box !important;
+  width: 27px !important;
+  min-width: 27px !important;
+  height: 27px !important;
+  margin: 0 !important;
+  padding: 0 0 2px !important;
+  color: var(--slack-muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+  font: 400 21px/1 "Segoe UI", sans-serif !important;
+  cursor: pointer !important;
+}
+
+chat-toast-component.dec-slack-chat-toast
+  .dec-slack-chat-toast-close:hover {
+  color: var(--slack-ink) !important;
+  background: var(--dec-accent-ring) !important;
+}
+
+html.dec-slack-theme-light
+  chat-toast-component.dec-slack-chat-toast,
+html.dec-slack-theme-light #dec-slack-emoji-autocomplete {
+  background: #ffffff !important;
+  box-shadow: 0 14px 38px rgba(29, 28, 29, 0.20) !important;
+}
+
+html.dec-slack-theme-light
+  chat-toast-component.dec-slack-chat-toast::after {
+  border-left-color: #ffffff !important;
+}
+
+@media (max-width: 900px) {
+  chat-messages-header.dec-slack-conversation-header
+    #showParticipants.dec-slack-conversation-title {
+    max-width: 42vw !important;
+    padding-right: 10px !important;
+    padding-left: 10px !important;
+  }
+
+  chat-messages-header.dec-slack-conversation-header
+    .dec-slack-conversation-actions {
+    max-width: 46vw !important;
+  }
+}
+
+/* ==========================================================
+   V13 — PILE DE NOTIFICATIONS ET EN-TÊTE SANS SÉPARATEURS
+   ========================================================== */
+
+/* La pile est placée sous le bandeau supérieur par le userscript. Les
+   notifications restent dans le flux de cette pile et ne se recouvrent plus. */
+#dec-slack-chat-toast-stack {
+  position: fixed !important;
+  z-index: 2147483200 !important;
+  right: 18px !important;
+  bottom: 12px !important;
+  left: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  box-sizing: border-box !important;
+  width: min(360px, calc(100vw - 36px)) !important;
+  margin: 0 !important;
+  padding: 0 10px 0 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  pointer-events: none !important;
+}
+
+#dec-slack-chat-toast-stack
+  > chat-toast-component.dec-slack-chat-toast {
+  position: relative !important;
+  z-index: auto !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  pointer-events: auto !important;
+}
+
+/* Neutralise toutes les couches opaques et les séparateurs natifs de
+   l'en-tête, y compris les pseudo-éléments et les variantes .b-b/.b-t. */
+chat-messages-header.dec-slack-conversation-header,
+chat-messages-header.dec-slack-conversation-header > *,
+chat-messages-header.dec-slack-conversation-header
+  :is(.header, .b-b, .b-t, .border-top, .border-bottom, .separator, .divider) {
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header * {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header::before,
+chat-messages-header.dec-slack-conversation-header::after,
+chat-messages-header.dec-slack-conversation-header .header::before,
+chat-messages-header.dec-slack-conversation-header .header::after {
+  content: none !important;
+  display: none !important;
+  border: 0 !important;
+}
+
+/* Les deux seules surfaces opaques conservées sont la cellule du titre et la
+   cellule d'actions explicitement créée à droite. */
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title,
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-actions {
+  background: var(--dec-accent-soft) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-actions[data-dec-created="true"] {
+  position: absolute !important;
+  top: 50% !important;
+  right: 0 !important;
+  left: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  width: max-content !important;
+  max-width: 42vw !important;
+  transform: translateY(-50%) !important;
+}
+
+/* ==========================================================
+   V14 — CORRECTIFS DES CONTRÔLES D'EN-TÊTE
+   ========================================================== */
+
+/* Supprime l'ancien avatar injecté par 3CX autour du titre, y compris lorsque
+   celui-ci est dessiné par un pseudo-élément plutôt que par app-avatar. */
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title::before,
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title::after,
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title
+  > *::before,
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-conversation-title
+  > *::after {
+  content: none !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: none !important;
+  border: 0 !important;
+}
+
+/* Les contrôles déplacés gardent parfois leur position absolue native. Ils
+   doivent redevenir des enfants ordinaires de la cellule d'actions. */
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-actions
+  > .dec-slack-conversation-action {
+  position: static !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  float: none !important;
+  flex: 0 0 30px !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+/* ==========================================================
+   V15 — TITRE RECONSTRUIT ET STATUT DU CONTACT
+   ========================================================== */
+
+/* Le contrôle natif est entièrement masqué : son pseudo-avatar ne peut plus
+   dépasser sur la gauche. La carte suivante relaie toujours son clic. */
+chat-messages-header.dec-slack-conversation-header
+  #showParticipants.dec-slack-native-title-hidden {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-card {
+  position: relative !important;
+  z-index: 3 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: min(52vw, 520px) !important;
+  min-height: 40px !important;
+  margin: 0 auto !important;
+  padding: 7px 16px !important;
+  overflow: hidden !important;
+  color: var(--slack-ink) !important;
+  background: var(--dec-accent-soft) !important;
+  border: 1px solid var(--dec-accent-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+  font-family: inherit !important;
+  text-align: center !important;
+  cursor: pointer !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-card::before,
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-card::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-card:hover {
+  background: var(--dec-accent-own-hover) !important;
+  border-color: var(--dec-accent-hover) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-name {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  color: var(--slack-ink) !important;
+  font-size: 14px !important;
+  font-weight: 720 !important;
+  line-height: 18px !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-height: 14px !important;
+  margin-top: 2px !important;
+  color: var(--slack-muted) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 14px !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[hidden] {
+  display: none !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence-dot {
+  display: block !important;
+  flex: 0 0 8px !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: #8c8c8c !important;
+  border: 1px solid rgba(255, 255, 255, 0.38) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.15) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="available"]
+  .dec-slack-conversation-presence-dot {
+  background: #2eb67d !important;
+  box-shadow: 0 0 0 2px rgba(46, 182, 125, 0.18) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="away"]
+  .dec-slack-conversation-presence-dot {
+  background: #e8a230 !important;
+  box-shadow: 0 0 0 2px rgba(232, 162, 48, 0.18) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="busy"]
+  .dec-slack-conversation-presence-dot {
+  background: #e01e5a !important;
+  box-shadow: 0 0 0 2px rgba(224, 30, 90, 0.18) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="lunch"]
+  .dec-slack-conversation-presence-dot {
+  background: #59bce8 !important;
+  box-shadow: 0 0 0 2px rgba(89, 188, 232, 0.18) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="business-trip"]
+  .dec-slack-conversation-presence-dot {
+  background: #315fa8 !important;
+  box-shadow: 0 0 0 2px rgba(49, 95, 168, 0.18) !important;
+}
+
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-presence[data-status="unregistered"]
+  .dec-slack-conversation-presence-dot {
+  background: #8c8c8c !important;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.15) !important;
+}
+
+/* ==========================================================
+   V16 — CENTRAGE ABSOLU ET STATUT NATIF MASQUÉ
+   ========================================================== */
+
+/* Le titre est centré par rapport à toute la largeur de la conversation,
+   indépendamment de la largeur de la cellule d'actions située à droite. */
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-conversation-title-card {
+  position: absolute !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: 50% !important;
+  margin: 0 !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+/* 3CX conserve sa propre ligne de présence à gauche dans les conversations
+   directes. Le userscript marque précisément ce nœud pour éviter le doublon. */
+chat-messages-header.dec-slack-conversation-header
+  .dec-slack-native-presence-hidden {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
