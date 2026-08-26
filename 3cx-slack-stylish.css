@@ -442,8 +442,9 @@ chat-component {
   /* Valeurs de repli pour un contact ou un groupe non identifié. */
   --slack-other-name: "Interlocuteur";
   --slack-other-avatar: url("https://decindustrie.3cx.no:5001/media/user.file-7ad8face.svg");
-  --slack-me-name: "Neil Hilgenga";
-  --slack-me-avatar: url("https://decindustrie.3cx.no:5001/user_images/rER33NlTwfKraqrGfw8sfkAj.png");
+  /* Valeurs neutres jusqu'à ce que le userscript détecte le compte connecté. */
+  --slack-me-name: "Moi";
+  --slack-me-avatar: url("https://decindustrie.3cx.no:5001/media/user.file-7ad8face.svg");
 }
 
 /* 3CX ne duplique pas l'avatar dans le DOM des messages.
@@ -764,11 +765,11 @@ chat-message:has(> .message-name)
   min-height: 36px !important;
 }
 
-/* L'avatar reste dans le bloc du message. Une valeur négative le faisait
-   remonter dans l'en-tête lorsque le groupe était en haut de la liste. */
+/* Le pseudo-avatar natif des messages de groupe est masqué : selon la position
+   du fil, 3CX pouvait encore le faire apparaître au niveau de l'en-tête. */
 chat-message:has(> .message-name)
   .message-inner:has(> .message-text.new-sender)::before {
-  top: 2px !important;
+  display: none !important;
 }
 
 /* L'heure rejoint la ligne du vrai nom. */
@@ -784,8 +785,8 @@ chat-message:has(> .message-name):has(.message-text.new-sender) {
   margin-top: 5px !important;
 }
 
-/* Dans les groupes, 3CX identifie au moins nos propres messages.
-   Ils utilisent donc toujours la vraie photo du profil Neil. */
+/* Dans les groupes, 3CX identifie nos propres messages. Leur identité est
+   fournie dynamiquement par le userscript pour chaque compte connecté. */
 chat-message:has(> .message-name.message-right)
   .message-inner.message-right {
   --slack-message-author: var(--slack-me-name);
@@ -1884,7 +1885,11 @@ html.dec-slack-layout-split
 
 html.dec-slack-layout-split
   chat-message:not(:has(> .message-name))
-  .message-inner.message-right:has(> .message-text.new-sender)::before {
+  .message-inner.message-right:has(> .message-text.new-sender)::before,
+html.dec-slack-layout-split
+  chat-message:not(:has(> .message-name))
+  .message-inner.message-right:has(> .message-text.new-sender)
+  > .dec-slack-message-avatar {
   grid-column: 3 !important;
   grid-row: 1 / 3 !important;
   justify-self: end !important;
@@ -2799,4 +2804,37 @@ chat-messages-header.dec-slack-conversation-header
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* ==========================================================
+   V17 — UN SEUL AVATAR DANS LES CONVERSATIONS DIRECTES
+   ========================================================== */
+
+/* Une fois l'avatar réel injecté par le userscript, le pseudo-avatar historique
+   est désactivé avec une spécificité supérieure aux anciennes règles V5. */
+chat-message:not(:has(> .message-name))
+  .message-inner:has(> .message-text.new-sender):has(
+    > .dec-slack-message-avatar
+  )::before {
+  content: none !important;
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Repli pour les variantes de 3CX qui placent un véritable app-avatar ou une
+   ancienne couche avatar-content dans le bloc du message. */
+chat-message:not(:has(> .message-name))
+  .message-inner:has(> .dec-slack-message-avatar)
+  > :is(app-avatar, .avatar-content, .avatar-contant):not(
+    .dec-slack-message-avatar
+  ) {
+  display: none !important;
 }
