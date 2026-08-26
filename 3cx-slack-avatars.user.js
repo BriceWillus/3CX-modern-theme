@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.5.8
+// @version      1.5.9
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -1368,21 +1368,30 @@
       option.type = "button";
       option.className = "dec-slack-emoji-suggestion";
       option.dataset.decEmojiSuggestion = definition.code;
+      option.dataset.decEmojiLiteral = String(Boolean(definition.literal));
       option.dataset.active = String(index === state.activeIndex);
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", String(index === state.activeIndex));
 
-      const image = document.createElement("img");
-      image.src = definition.url;
-      image.alt = "";
-      image.loading = "lazy";
-      image.decoding = "async";
+      const preview = definition.literal
+        ? document.createElement("span")
+        : document.createElement("img");
+      if (definition.literal) {
+        preview.className = "dec-slack-emoji-suggestion-literal-icon";
+        preview.textContent = ":";
+        preview.setAttribute("aria-hidden", "true");
+      } else {
+        preview.src = definition.url;
+        preview.alt = "";
+        preview.loading = "lazy";
+        preview.decoding = "async";
+      }
 
       const text = document.createElement("span");
       text.className = "dec-slack-emoji-suggestion-code";
-      text.textContent = `:${definition.code}:`;
+      text.textContent = definition.literal ? ":" : `:${definition.code}:`;
 
-      option.append(image, text);
+      option.append(preview, text);
       if (definition.label) {
         const label = document.createElement("small");
         label.textContent = definition.label;
@@ -1420,6 +1429,15 @@
         `:${definition.code}:`.toLocaleLowerCase("fr-FR").startsWith(normalizedToken),
       )
       .sort((first, second) => first.code.localeCompare(second.code, "fr-FR"));
+
+    if (normalizedToken === ":") {
+      matches.unshift({
+        code: "",
+        url: "",
+        label: "Conserver le caractère :",
+        literal: true,
+      });
+    }
 
     if (matches.length === 0) {
       closeEmojiAutocomplete();
@@ -1473,6 +1491,13 @@
 
   function insertEmojiSuggestion(code) {
     const state = emojiAutocompleteState;
+    const selectedDefinition = state?.matches.find(
+      (definition) => definition.code === code,
+    );
+    if (selectedDefinition?.literal) {
+      closeEmojiAutocomplete();
+      return;
+    }
     const definition = customEmojis.get(code);
     if (!state || !definition || !state.composer?.isConnected) {
       closeEmojiAutocomplete();
@@ -1555,8 +1580,16 @@
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
+        const selectedDefinition = state.matches[state.activeIndex];
+        if (selectedDefinition?.literal) {
+          closeEmojiAutocomplete();
+          if (event.key === "Tab") {
+            event.preventDefault();
+          }
+          return;
+        }
         event.preventDefault();
-        insertEmojiSuggestion(state.matches[state.activeIndex].code);
+        insertEmojiSuggestion(selectedDefinition.code);
       }
     }, true);
 
