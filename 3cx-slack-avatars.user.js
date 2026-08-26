@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.5.9
+// @version      1.6.2
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -23,6 +23,9 @@
   const CHAT_TOAST_STACK_ID = "dec-slack-chat-toast-stack";
   const ENTER_OTHER_CLASS = "dec-slack-enter-other";
   const ENTER_OWN_CLASS = "dec-slack-enter-own";
+  const LATEST_READ_CLASS = "dec-slack-latest-read";
+  const READ_AVATAR_CLASS = "dec-slack-read-avatar";
+  const HIDDEN_READ_RECEIPT_CLASS = "dec-slack-native-read-hidden";
   const CONTROLS_ID = "dec-slack-controls";
   const STORAGE_LAYOUT = "decSlackLayout";
   const STORAGE_THEME = "decSlackTheme";
@@ -2349,6 +2352,94 @@
     );
   }
 
+  function enhanceReadReceipts() {
+    const messagesWithReceipt = [
+      ...document.querySelectorAll(`${MESSAGE_SELECTOR}:has(delivered-check)`),
+    ];
+    const latestMessage = messagesWithReceipt.at(-1) || null;
+    const previousLatest = document.querySelector(
+      `${MESSAGE_SELECTOR}.${LATEST_READ_CLASS}`,
+    );
+
+    if (previousLatest && previousLatest !== latestMessage) {
+      previousLatest.classList.remove(LATEST_READ_CLASS);
+    }
+    const latestReceipt = latestMessage?.querySelector("delivered-check") || null;
+    const directProfile = latestMessage
+      ? directConversationProfileFromHeader()
+      : null;
+    const portraitHost = latestMessage
+      ? latestMessage.querySelector(".message-outter-wrapper") || latestMessage
+      : null;
+
+    /* Nettoyage de l'ancienne implémentation (<= 1.6.0), qui transformait
+       directement le composant delivered-check en portrait. */
+    document.querySelectorAll(`delivered-check.${READ_AVATAR_CLASS}`).forEach(
+      (receipt) => {
+        receipt.classList.remove(READ_AVATAR_CLASS);
+        receipt.style.removeProperty("--dec-read-receipt-avatar");
+        delete receipt.dataset.decReadProfile;
+        receipt.removeAttribute("role");
+        receipt.removeAttribute("aria-label");
+        receipt.removeAttribute("title");
+      },
+    );
+
+    document
+      .querySelectorAll(`delivered-check.${HIDDEN_READ_RECEIPT_CLASS}`)
+      .forEach((receipt) => {
+        if (receipt !== latestReceipt || !directProfile) {
+          receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS);
+        }
+      });
+
+    document
+      .querySelectorAll(`.${READ_AVATAR_CLASS}[data-dec-created="true"]`)
+      .forEach((portrait) => {
+        if (portrait.parentElement !== portraitHost || !directProfile) {
+          portrait.remove();
+        }
+      });
+
+    if (!latestMessage) {
+      return;
+    }
+    latestMessage.classList.add(LATEST_READ_CLASS);
+
+    if (!latestReceipt || !directProfile) {
+      return;
+    }
+
+    const avatarCss = directProfile.imageUrl
+      ? `url(${JSON.stringify(directProfile.imageUrl)})`
+      : initialsAvatarCssUrl(directProfile);
+    const profileKey = `${directProfile.extension}|${directProfile.name}|${avatarCss}`;
+    latestReceipt.classList.add(HIDDEN_READ_RECEIPT_CLASS);
+
+    let portrait = Array.from(portraitHost.children).find(
+      (child) =>
+        child.classList.contains(READ_AVATAR_CLASS) &&
+        child.dataset.decCreated === "true",
+    );
+    if (!portrait) {
+      portrait = document.createElement("span");
+      portrait.className = READ_AVATAR_CLASS;
+      portrait.dataset.decCreated = "true";
+      portraitHost.appendChild(portrait);
+    }
+
+    if (portrait.dataset.decReadProfile !== profileKey) {
+      portrait.dataset.decReadProfile = profileKey;
+      portrait.style.setProperty(
+        "--dec-read-receipt-avatar",
+        avatarCss,
+      );
+      portrait.setAttribute("role", "img");
+      portrait.setAttribute("aria-label", `Lu par ${directProfile.name}`);
+      portrait.title = `Lu par ${directProfile.name}`;
+    }
+  }
+
   function markMessage(message, isNearConversationEnd) {
     if (knownMessages.has(message)) {
       return;
@@ -2720,6 +2811,7 @@
       markMessage(message, index >= animationStartIndex);
       enhanceMessage(message, profiles);
     });
+    enhanceReadReceipts();
     enhanceCustomEmojis();
     enhanceOriginalImagePreviews();
     initialMessageScan = false;
