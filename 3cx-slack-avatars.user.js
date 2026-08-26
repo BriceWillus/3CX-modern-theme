@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.4.1
+// @version      1.5.5
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
 // @connect      *
 // ==/UserScript==
 
@@ -18,6 +19,8 @@
   const STYLE_ID = "dec-slack-message-avatar-styles";
   const PARTICIPANT_SELECTOR = "app-chat-participants li";
   const MESSAGE_SELECTOR = "chat-message";
+  const CHAT_TOAST_SELECTOR = "chat-toast-component";
+  const CHAT_TOAST_STACK_ID = "dec-slack-chat-toast-stack";
   const ENTER_OTHER_CLASS = "dec-slack-enter-other";
   const ENTER_OWN_CLASS = "dec-slack-enter-own";
   const CONTROLS_ID = "dec-slack-controls";
@@ -26,11 +29,12 @@
   const STORAGE_ACCENT = "decSlackAccent";
   const STORAGE_EMOJI_MANIFEST = "decSlackEmojiManifest";
   const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
-  const STORAGE_CHAT_HEADER_COLLAPSED = "decSlackChatHeaderCollapsed";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
+  const EMOJI_AUTOCOMPLETE_ID = "dec-slack-emoji-autocomplete";
   const CUSTOM_EMOJI_REFRESH_MS = 5 * 60 * 1000;
+  const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
 
   /*
    * URL HTTPS du manifeste partagé. Exemple :
@@ -51,12 +55,25 @@
   const INLINE_CUSTOM_EMOJIS = {};
 
   const knownMessages = new WeakSet();
+  const knownChatToasts = new WeakMap();
+  const initialChatToasts = new WeakSet();
+  const enhancedChatToasts = new WeakSet();
   const customEmojis = new Map();
   let initialMessageScan = true;
+  let chatToastObserver = null;
+  let chatToastStackInitialized = false;
+  let emojiAutocompleteState = null;
+  let emojiAutocompleteInitialized = false;
   let suppressAnimationsUntil = performance.now() + 1200;
   let customEmojiRevision = 0;
   let customNotificationSound = null;
   let notificationAudio = null;
+  let notificationAudioObjectUrl = "";
+  let notificationAudioLoadPromise = null;
+  let notificationAudioLoadError = null;
+  let notificationAudioContext = null;
+  let notificationAudioBuffer = null;
+  let notificationAudioBufferUrl = "";
   let lastNotificationAt = 0;
   let cachedChatSessionId = (() => {
     try {
@@ -139,8 +156,6 @@
     accent: normalizeHex(readSetting(STORAGE_ACCENT, "#4a154b")),
     searchCollapsed:
       readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
-    chatHeaderCollapsed:
-      readSetting(STORAGE_CHAT_HEADER_COLLAPSED, "false") === "true",
     notificationSound:
       readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
   };
@@ -202,9 +217,6 @@
     );
     const themeButton = controls.querySelector("[data-dec-control='theme']");
     const searchButton = controls.querySelector("[data-dec-control='search']");
-    const chatHeaderButton = controls.querySelector(
-      "[data-dec-control='chat-header']",
-    );
     const soundButton = controls.querySelector("[data-dec-control='sound']");
     const colorInput = controls.querySelector("[data-dec-control='accent']");
 
@@ -233,18 +245,6 @@
     searchButton.title = preferences.searchCollapsed
       ? "Déplier la barre de recherche"
       : "Replier la barre de recherche";
-
-    chatHeaderButton.dataset.active = String(
-      preferences.chatHeaderCollapsed,
-    );
-    chatHeaderButton.setAttribute(
-      "aria-pressed",
-      String(preferences.chatHeaderCollapsed),
-    );
-    chatHeaderButton.textContent = preferences.chatHeaderCollapsed ? "▱" : "▤";
-    chatHeaderButton.title = preferences.chatHeaderCollapsed
-      ? "Déplier l’en-tête de la conversation"
-      : "Replier l’en-tête de la conversation";
 
     soundButton.dataset.active = String(preferences.notificationSound);
     soundButton.dataset.available = String(Boolean(customNotificationSound));
@@ -277,10 +277,7 @@
       "dec-slack-search-collapsed",
       preferences.searchCollapsed,
     );
-    root.classList.toggle(
-      "dec-slack-chat-header-collapsed",
-      preferences.chatHeaderCollapsed,
-    );
+    root.classList.remove("dec-slack-chat-header-collapsed");
     applyAccentVariables();
     updateControls();
   }
@@ -317,12 +314,6 @@
       <button
         type="button"
         class="dec-slack-control-button"
-        data-dec-control="chat-header"
-        aria-label="Replier ou déplier l’en-tête de la conversation"
-      ></button>
-      <button
-        type="button"
-        class="dec-slack-control-button"
         data-dec-control="sound"
         aria-label="Activer ou désactiver le son personnalisé"
       ></button>
@@ -344,9 +335,6 @@
     );
     const themeButton = controls.querySelector("[data-dec-control='theme']");
     const searchButton = controls.querySelector("[data-dec-control='search']");
-    const chatHeaderButton = controls.querySelector(
-      "[data-dec-control='chat-header']",
-    );
     const soundButton = controls.querySelector("[data-dec-control='sound']");
     const colorInput = controls.querySelector("[data-dec-control='accent']");
 
@@ -368,15 +356,6 @@
       writeSetting(
         STORAGE_SEARCH_COLLAPSED,
         String(preferences.searchCollapsed),
-      );
-      applyPreferences();
-    });
-
-    chatHeaderButton.addEventListener("click", () => {
-      preferences.chatHeaderCollapsed = !preferences.chatHeaderCollapsed;
-      writeSetting(
-        STORAGE_CHAT_HEADER_COLLAPSED,
-        String(preferences.chatHeaderCollapsed),
       );
       applyPreferences();
     });
@@ -645,23 +624,258 @@
     );
   }
 
-  function prepareNotificationAudio() {
-    if (!customNotificationSound) {
+  function audioMimeType(url, responseHeaders = "") {
+    const headerMime =
+      String(responseHeaders).match(/^content-type:\s*([^;\r\n]+)/im)?.[1] ||
+      "";
+    const extension = new URL(url).pathname.split(".").pop()?.toLowerCase();
+    const extensionMime = {
+      mp3: "audio/mpeg",
+      wav: "audio/wav",
+      ogg: "audio/ogg",
+      oga: "audio/ogg",
+      m4a: "audio/mp4",
+      aac: "audio/aac",
+    }[extension];
+
+    // GitHub Pages sert notamment les MP3 en audio/mp3. Chrome attend le
+    // type standard audio/mpeg lorsqu'on recrée le fichier dans un Blob.
+    return extensionMime || headerMime || "application/octet-stream";
+  }
+
+  function userscriptHttpRequest(details) {
+    if (typeof GM_xmlhttpRequest === "function") {
+      return GM_xmlhttpRequest(details);
+    }
+    if (typeof GM === "object" && typeof GM.xmlHttpRequest === "function") {
+      return GM.xmlHttpRequest(details);
+    }
+    return null;
+  }
+
+  function hasUserscriptHttpRequest() {
+    return (
+      typeof GM_xmlhttpRequest === "function" ||
+      (typeof GM === "object" && typeof GM.xmlHttpRequest === "function")
+    );
+  }
+
+  function audioDataUrl(bytes, mimeType) {
+    const view = new Uint8Array(bytes);
+    const chunks = [];
+    const chunkSize = 0x8000;
+    for (let index = 0; index < view.length; index += chunkSize) {
+      chunks.push(
+        String.fromCharCode(...view.subarray(index, index + chunkSize)),
+      );
+    }
+    return `data:${mimeType};base64,${btoa(chunks.join(""))}`;
+  }
+
+  function requestNotificationAudioSource(definition) {
+    if (definition.url.startsWith("data:audio/")) {
+      return Promise.resolve({
+        playbackUrl: definition.url,
+        bytes: null,
+      });
+    }
+
+    if (hasUserscriptHttpRequest()) {
+      return new Promise((resolve, reject) => {
+        userscriptHttpRequest({
+          method: "GET",
+          url: definition.url,
+          responseType: "arraybuffer",
+          async onload(response) {
+            if (response.status < 200 || response.status >= 300) {
+              reject(new Error(`HTTP ${response.status}`));
+              return;
+            }
+
+            try {
+              let bytes = response.response;
+              if (bytes instanceof Blob) {
+                bytes = await bytes.arrayBuffer();
+              } else if (ArrayBuffer.isView(bytes)) {
+                bytes = bytes.buffer.slice(
+                  bytes.byteOffset,
+                  bytes.byteOffset + bytes.byteLength,
+                );
+              }
+
+              if (!(bytes instanceof ArrayBuffer) || bytes.byteLength === 0) {
+                throw new Error("Le fichier audio est vide ou illisible.");
+              }
+
+              const mimeType = audioMimeType(
+                definition.url,
+                response.responseHeaders || "",
+              );
+              const blob = new Blob([bytes], { type: mimeType });
+              resolve({
+                // Firefox accepte de façon plus constante une URL data dans
+                // un userscript qu'une URL blob créée par le bac à sable GM.
+                playbackUrl: IS_FIREFOX
+                  ? audioDataUrl(bytes, mimeType)
+                  : URL.createObjectURL(blob),
+                bytes,
+              });
+            } catch (error) {
+              reject(error);
+            }
+          },
+          onerror() {
+            reject(new Error("Impossible de télécharger le son personnalisé."));
+          },
+          ontimeout() {
+            reject(new Error("Délai de chargement du son dépassé."));
+          },
+          timeout: 15000,
+        });
+      });
+    }
+
+    return window
+      .fetch(definition.url, {
+        cache: "force-cache",
+      })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer().then((bytes) => {
+          const blob = new Blob([bytes], {
+            type: audioMimeType(
+              definition.url,
+              response.headers.get("content-type") || "",
+            ),
+          });
+          return {
+            playbackUrl: URL.createObjectURL(blob),
+            bytes,
+          };
+        });
+      });
+  }
+
+  function ensureNotificationAudioContext() {
+    // Sur Firefox, HTMLAudio est plus fiable en arrière-plan et évite les
+    // différences de suspension d'AudioContext entre Chrome et Gecko.
+    if (IS_FIREFOX) {
+      return null;
+    }
+    if (notificationAudioContext) {
+      return notificationAudioContext;
+    }
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
       return null;
     }
 
-    if (
-      !notificationAudio ||
-      notificationAudio.dataset.decSoundUrl !== customNotificationSound.url
-    ) {
-      notificationAudio?.pause();
-      notificationAudio = new Audio(customNotificationSound.url);
-      notificationAudio.dataset.decSoundUrl = customNotificationSound.url;
-      notificationAudio.preload = "auto";
+    try {
+      notificationAudioContext = new AudioContextClass();
+      return notificationAudioContext;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearNotificationAudio() {
+    notificationAudio?.pause();
+    notificationAudio = null;
+    notificationAudioLoadPromise = null;
+    notificationAudioLoadError = null;
+    notificationAudioBuffer = null;
+    notificationAudioBufferUrl = "";
+
+    if (notificationAudioObjectUrl) {
+      URL.revokeObjectURL(notificationAudioObjectUrl);
+      notificationAudioObjectUrl = "";
+    }
+  }
+
+  function prepareNotificationAudio() {
+    if (!customNotificationSound) {
+      return Promise.resolve(null);
     }
 
-    notificationAudio.volume = customNotificationSound.volume;
-    return notificationAudio;
+    if (
+      notificationAudio &&
+      notificationAudio.dataset.decSoundUrl === customNotificationSound.url
+    ) {
+      notificationAudio.volume = customNotificationSound.volume;
+      return Promise.resolve(notificationAudio);
+    }
+
+    if (notificationAudioLoadPromise) {
+      return notificationAudioLoadPromise;
+    }
+
+    const definition = customNotificationSound;
+    notificationAudioLoadError = null;
+    let currentLoadPromise = null;
+    currentLoadPromise = requestNotificationAudioSource(definition)
+      .then(async ({ playbackUrl, bytes }) => {
+        if (customNotificationSound?.url !== definition.url) {
+          if (playbackUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(playbackUrl);
+          }
+          return null;
+        }
+
+        notificationAudio?.pause();
+        if (notificationAudioObjectUrl) {
+          URL.revokeObjectURL(notificationAudioObjectUrl);
+        }
+
+        notificationAudioObjectUrl = playbackUrl.startsWith("blob:")
+          ? playbackUrl
+          : "";
+        notificationAudio = new Audio(playbackUrl);
+        notificationAudio.dataset.decSoundUrl = definition.url;
+        notificationAudio.preload = "auto";
+        notificationAudio.volume = definition.volume;
+
+        const audioContext = ensureNotificationAudioContext();
+        if (audioContext && bytes) {
+          try {
+            notificationAudioBuffer = await audioContext.decodeAudioData(
+              bytes.slice(0),
+            );
+            notificationAudioBufferUrl = definition.url;
+          } catch (error) {
+            notificationAudioBuffer = null;
+            notificationAudioBufferUrl = "";
+            notificationAudioLoadError = error;
+          }
+        }
+
+        return notificationAudio;
+      })
+      .catch((error) => {
+        notificationAudioLoadError = error;
+        // Dernier repli : la lecture directe d'une URL audio ne nécessite pas
+        // que le serveur autorise fetch/CORS dans Firefox.
+        try {
+          notificationAudio = new Audio(definition.url);
+          notificationAudio.dataset.decSoundUrl = definition.url;
+          notificationAudio.preload = "auto";
+          notificationAudio.volume = definition.volume;
+          return notificationAudio;
+        } catch {
+          return null;
+        }
+      })
+      .finally(() => {
+        if (notificationAudioLoadPromise === currentLoadPromise) {
+          notificationAudioLoadPromise = null;
+        }
+      });
+
+    notificationAudioLoadPromise = currentLoadPromise;
+    return currentLoadPromise;
   }
 
   function playCustomNotification({ preview = false } = {}) {
@@ -678,24 +892,75 @@
     }
     lastNotificationAt = now;
 
-    const audio = prepareNotificationAudio();
-    if (!audio) {
-      return;
-    }
+    const requestedSound = customNotificationSound;
+    const audioContext = ensureNotificationAudioContext();
+    const resumeContext = audioContext
+      ? audioContext.resume().catch((error) => {
+          if (preview) {
+            console.warn(
+              "[3CX Slack] Le navigateur a bloqué l’activation du moteur audio.",
+              error,
+            );
+          }
+        })
+      : Promise.resolve();
 
-    audio.pause();
-    audio.currentTime = 0;
-    const playback = audio.play();
-    if (playback && typeof playback.catch === "function") {
-      playback.catch((error) => {
-        if (preview) {
+    void prepareNotificationAudio().then((audio) => {
+      if (
+        !preferences.notificationSound ||
+        customNotificationSound?.url !== requestedSound.url
+      ) {
+        return;
+      }
+
+      if (!audio) {
+        if (preview && notificationAudioLoadError) {
           console.warn(
-            "[3CX Slack] Le navigateur n'a pas pu lire le son personnalisé.",
-            error,
+            "[3CX Slack] Impossible de charger le son personnalisé.",
+            notificationAudioLoadError,
           );
         }
-      });
-    }
+        return;
+      }
+
+      if (
+        audioContext &&
+        notificationAudioBuffer &&
+        notificationAudioBufferUrl === requestedSound.url
+      ) {
+        void resumeContext.then(() => {
+          if (
+            !preferences.notificationSound ||
+            customNotificationSound?.url !== requestedSound.url
+          ) {
+            return;
+          }
+
+          const source = audioContext.createBufferSource();
+          const gain = audioContext.createGain();
+          source.buffer = notificationAudioBuffer;
+          gain.gain.value = requestedSound.volume;
+          source.connect(gain);
+          gain.connect(audioContext.destination);
+          source.start(0);
+        });
+        return;
+      }
+
+      audio.pause();
+      audio.currentTime = 0;
+      const playback = audio.play();
+      if (playback && typeof playback.catch === "function") {
+        playback.catch((error) => {
+          if (preview) {
+            console.warn(
+              "[3CX Slack] Le navigateur n'a pas pu lire le son personnalisé.",
+              error,
+            );
+          }
+        });
+      }
+    });
   }
 
   function updateExistingCustomEmojiImages() {
@@ -759,11 +1024,10 @@
     }
 
     if (soundChanged) {
-      notificationAudio?.pause();
-      notificationAudio = null;
+      clearNotificationAudio();
       customNotificationSound = nextNotificationSound;
       if (preferences.notificationSound) {
-        prepareNotificationAudio();
+        void prepareNotificationAudio();
       }
       updateControls();
     }
@@ -785,9 +1049,9 @@
   }
 
   function requestCustomEmojiManifest(url) {
-    if (typeof GM_xmlhttpRequest === "function") {
+    if (hasUserscriptHttpRequest()) {
       return new Promise((resolve, reject) => {
-        GM_xmlhttpRequest({
+        userscriptHttpRequest({
           method: "GET",
           url,
           headers: {
@@ -975,6 +1239,342 @@
     }
   }
 
+  function emojiComposerFromTarget(target) {
+    const element =
+      target?.nodeType === Node.ELEMENT_NODE ? target : target?.parentElement;
+    return element?.closest?.(
+      "#chat-form-controls emoji-text-input .message-input, " +
+        "#chat-form-controls textarea, " +
+        "#chat-form-controls [contenteditable='true']",
+    ) || null;
+  }
+
+  function composerCaretInfo(composer) {
+    if (composer instanceof HTMLInputElement || composer instanceof HTMLTextAreaElement) {
+      const caret = composer.selectionStart;
+      if (caret === null) {
+        return null;
+      }
+      return {
+        text: composer.value,
+        caret,
+      };
+    }
+
+    if (!composer.isContentEditable) {
+      return null;
+    }
+
+    const selection = window.getSelection();
+    if (
+      !selection ||
+      selection.rangeCount === 0 ||
+      !composer.contains(selection.anchorNode)
+    ) {
+      return null;
+    }
+
+    const caretRange = selection.getRangeAt(0);
+    if (!caretRange.collapsed) {
+      return null;
+    }
+
+    const beforeCaret = caretRange.cloneRange();
+    beforeCaret.selectNodeContents(composer);
+    beforeCaret.setEnd(caretRange.endContainer, caretRange.endOffset);
+    return {
+      text: composer.textContent || "",
+      caret: beforeCaret.toString().length,
+    };
+  }
+
+  function emojiTokenAtCaret(text, caret) {
+    const beforeCaret = String(text || "").slice(0, caret);
+    const match = beforeCaret.match(/(^|[\s([{])(:[a-z0-9_+-]*)$/i);
+    if (!match) {
+      return null;
+    }
+
+    const token = match[2];
+    return {
+      token,
+      start: caret - token.length,
+      end: caret,
+    };
+  }
+
+  function ensureEmojiAutocompletePanel() {
+    let panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
+    if (panel || !document.body) {
+      return panel;
+    }
+
+    panel = document.createElement("div");
+    panel.id = EMOJI_AUTOCOMPLETE_ID;
+    panel.setAttribute("role", "listbox");
+    panel.setAttribute("aria-label", "Emojis personnalisés");
+    panel.hidden = true;
+    panel.addEventListener("pointerdown", (event) => {
+      // Garde le curseur dans le champ pendant le clic sur une proposition.
+      event.preventDefault();
+    });
+    panel.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-dec-emoji-suggestion]");
+      if (!option) {
+        return;
+      }
+      insertEmojiSuggestion(option.dataset.decEmojiSuggestion || "");
+    });
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  function closeEmojiAutocomplete() {
+    const panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
+    if (panel) {
+      panel.hidden = true;
+      panel.replaceChildren();
+    }
+    emojiAutocompleteState = null;
+  }
+
+  function positionEmojiAutocomplete() {
+    const panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
+    const composer = emojiAutocompleteState?.composer;
+    if (!panel || panel.hidden || !composer?.isConnected) {
+      return;
+    }
+
+    const anchor = composer.closest(".message-input-wrap") || composer;
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(Math.max(rect.width, 280), 560, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    panel.style.width = `${width}px`;
+    panel.style.left = `${left}px`;
+    panel.style.bottom = `${Math.max(12, window.innerHeight - rect.top + 8)}px`;
+  }
+
+  function renderEmojiAutocomplete() {
+    const panel = ensureEmojiAutocompletePanel();
+    const state = emojiAutocompleteState;
+    if (!panel || !state || state.matches.length === 0) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    state.matches.forEach((definition, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "dec-slack-emoji-suggestion";
+      option.dataset.decEmojiSuggestion = definition.code;
+      option.dataset.active = String(index === state.activeIndex);
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === state.activeIndex));
+
+      const image = document.createElement("img");
+      image.src = definition.url;
+      image.alt = "";
+      image.loading = "lazy";
+      image.decoding = "async";
+
+      const text = document.createElement("span");
+      text.className = "dec-slack-emoji-suggestion-code";
+      text.textContent = `:${definition.code}:`;
+
+      option.append(image, text);
+      if (definition.label) {
+        const label = document.createElement("small");
+        label.textContent = definition.label;
+        option.append(label);
+      }
+      fragment.appendChild(option);
+    });
+
+    panel.replaceChildren(fragment);
+    panel.hidden = false;
+    positionEmojiAutocomplete();
+    panel
+      .querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }
+
+  function updateEmojiAutocomplete(composer) {
+    if (!composer || customEmojis.size === 0) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const caretInfo = composerCaretInfo(composer);
+    const tokenInfo = caretInfo
+      ? emojiTokenAtCaret(caretInfo.text, caretInfo.caret)
+      : null;
+    if (!tokenInfo) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const normalizedToken = tokenInfo.token.toLocaleLowerCase("fr-FR");
+    const matches = [...customEmojis.values()]
+      .filter((definition) =>
+        `:${definition.code}:`.toLocaleLowerCase("fr-FR").startsWith(normalizedToken),
+      )
+      .sort((first, second) => first.code.localeCompare(second.code, "fr-FR"));
+
+    if (matches.length === 0) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const previousCode =
+      emojiAutocompleteState?.matches[emojiAutocompleteState.activeIndex]?.code;
+    const preservedIndex = matches.findIndex(
+      (definition) => definition.code === previousCode,
+    );
+    emojiAutocompleteState = {
+      composer,
+      start: tokenInfo.start,
+      end: tokenInfo.end,
+      matches,
+      activeIndex: preservedIndex >= 0 ? preservedIndex : 0,
+    };
+    renderEmojiAutocomplete();
+  }
+
+  function contentEditableRangeFromOffsets(root, start, end) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let offset = 0;
+    let startPoint = null;
+    let endPoint = null;
+    let node = walker.nextNode();
+
+    while (node) {
+      const nextOffset = offset + node.data.length;
+      if (!startPoint && start <= nextOffset) {
+        startPoint = { node, offset: Math.max(0, start - offset) };
+      }
+      if (!endPoint && end <= nextOffset) {
+        endPoint = { node, offset: Math.max(0, end - offset) };
+        break;
+      }
+      offset = nextOffset;
+      node = walker.nextNode();
+    }
+
+    if (!startPoint || !endPoint) {
+      return null;
+    }
+
+    const range = document.createRange();
+    range.setStart(startPoint.node, startPoint.offset);
+    range.setEnd(endPoint.node, endPoint.offset);
+    return range;
+  }
+
+  function insertEmojiSuggestion(code) {
+    const state = emojiAutocompleteState;
+    const definition = customEmojis.get(code);
+    if (!state || !definition || !state.composer?.isConnected) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const composer = state.composer;
+    const replacement = `:${definition.code}:`;
+    composer.focus({ preventScroll: true });
+
+    if (composer instanceof HTMLInputElement || composer instanceof HTMLTextAreaElement) {
+      composer.setRangeText(replacement, state.start, state.end, "end");
+      composer.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: replacement,
+      }));
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const range = contentEditableRangeFromOffsets(composer, state.start, state.end);
+    if (!range) {
+      closeEmojiAutocomplete();
+      return;
+    }
+
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const inserted = document.execCommand("insertText", false, replacement);
+    if (!inserted) {
+      range.deleteContents();
+      const text = document.createTextNode(replacement);
+      range.insertNode(text);
+      range.setStartAfter(text);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      composer.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: replacement,
+      }));
+    }
+    closeEmojiAutocomplete();
+  }
+
+  function initializeEmojiAutocomplete() {
+    if (emojiAutocompleteInitialized) {
+      return;
+    }
+    emojiAutocompleteInitialized = true;
+    ensureEmojiAutocompletePanel();
+
+    document.addEventListener("input", (event) => {
+      const composer = emojiComposerFromTarget(event.target);
+      if (composer) {
+        updateEmojiAutocomplete(composer);
+      }
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      const state = emojiAutocompleteState;
+      if (!state || emojiComposerFromTarget(event.target) !== state.composer) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeEmojiAutocomplete();
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        state.activeIndex =
+          (state.activeIndex + direction + state.matches.length) % state.matches.length;
+        renderEmojiAutocomplete();
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        insertEmojiSuggestion(state.matches[state.activeIndex].code);
+      }
+    }, true);
+
+    document.addEventListener("pointerdown", (event) => {
+      const panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
+      if (
+        emojiAutocompleteState &&
+        !panel?.contains(event.target) &&
+        emojiComposerFromTarget(event.target) !== emojiAutocompleteState.composer
+      ) {
+        closeEmojiAutocomplete();
+      }
+    }, true);
+
+    window.addEventListener("resize", positionEmojiAutocomplete);
+    document.addEventListener("scroll", positionEmojiAutocomplete, true);
+  }
+
   function participantProfileFromRow(row) {
     const line = row.querySelector("app-extension-line-view");
     const rowText = line?.textContent || row.textContent || "";
@@ -1151,6 +1751,294 @@
     );
   }
 
+  function conversationPresenceFromHeader(header, ignoredTitle) {
+    const statusPattern =
+      /\b(Non enregistré|Voyage d'affaires|Disponible|Absent|Ne pas déranger|Occupé|En réunion|Déjeuner|En déplacement|Hors ligne|Unregistered|Business trip|Available|Away|Do not disturb|Busy|Offline)\b/i;
+    const candidates = [];
+
+    header
+      .querySelectorAll(
+        "[class*='status'], [class*='presence'], [data-status], " +
+          "[title], [aria-label], small, .text-muted",
+      )
+      .forEach((element) => {
+        if (
+          ignoredTitle.contains(element) ||
+          element.closest(".dec-slack-conversation-actions") ||
+          element.closest(".dec-slack-conversation-title-card")
+        ) {
+          return;
+        }
+        candidates.push(
+          element.textContent,
+          element.getAttribute("title"),
+          element.getAttribute("aria-label"),
+          element.getAttribute("data-status"),
+        );
+      });
+    candidates.push(header.textContent);
+
+    for (const candidate of candidates) {
+      const match = String(candidate || "").match(statusPattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    return "";
+  }
+
+  function conversationPresenceKind(status) {
+    const normalized = String(status || "").toLocaleLowerCase("fr-FR");
+    if (/non enregistré|unregistered/.test(normalized)) {
+      return "unregistered";
+    }
+    if (/voyage d'affaires|business trip/.test(normalized)) {
+      return "business-trip";
+    }
+    if (/déjeuner/.test(normalized)) {
+      return "lunch";
+    }
+    if (/disponible|available/.test(normalized)) {
+      return "available";
+    }
+    if (/absent|away|déplacement/.test(normalized)) {
+      return "away";
+    }
+    if (/ne pas déranger|occupé|réunion|do not disturb|busy/.test(normalized)) {
+      return "busy";
+    }
+    return "offline";
+  }
+
+  function visibleCssColor(value) {
+    const color = String(value || "").trim();
+    if (
+      !color ||
+      color === "transparent" ||
+      color === "none" ||
+      color === "currentcolor"
+    ) {
+      return "";
+    }
+    if (
+      /^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(color) ||
+      /^rgb\([^)]*\/\s*0(?:\.0+)?%?\s*\)$/i.test(color)
+    ) {
+      return "";
+    }
+    return color;
+  }
+
+  function nativePresenceColor(element) {
+    if (!element) {
+      return "";
+    }
+    if (element.dataset.decPresenceColor) {
+      return element.dataset.decPresenceColor;
+    }
+
+    const nodes = [element, ...element.querySelectorAll("*")];
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      const compactNode =
+        rect.width > 0 && rect.height > 0 && rect.width <= 24 && rect.height <= 24;
+      for (const pseudo of [null, "::before", "::after"]) {
+        const style = window.getComputedStyle(node, pseudo);
+        const pseudoWidth = Number.parseFloat(style.width);
+        const pseudoHeight = Number.parseFloat(style.height);
+        const compactPseudo =
+          pseudo &&
+          pseudoWidth > 0 &&
+          pseudoHeight > 0 &&
+          pseudoWidth <= 24 &&
+          pseudoHeight <= 24;
+        if (!compactNode && !compactPseudo) {
+          continue;
+        }
+        const candidates = [style.backgroundColor];
+        if (Number.parseFloat(style.borderTopWidth) > 0) {
+          candidates.push(style.borderTopColor);
+        }
+        if (node.namespaceURI === "http://www.w3.org/2000/svg") {
+          candidates.push(style.fill, style.stroke, style.color);
+        } else if (compactNode || (pseudo && style.content !== "none")) {
+          candidates.push(style.color);
+        }
+        for (const candidate of candidates) {
+          const color = visibleCssColor(candidate);
+          if (color) {
+            element.dataset.decPresenceColor = color;
+            return color;
+          }
+        }
+      }
+    }
+    return "";
+  }
+
+  function hideNativeConversationPresence(header, ignoredTitle, presence) {
+    if (!presence) {
+      return "";
+    }
+
+    const exactStatusPattern =
+      /^(Non enregistré|Voyage d'affaires|Disponible|Absent|Ne pas déranger|Occupé|En réunion|Déjeuner|En déplacement|Hors ligne|Unregistered|Business trip|Available|Away|Do not disturb|Busy|Offline)$/i;
+    const statusContainerSelector =
+      "[class*='status'], [class*='presence'], [data-status], small, .text-muted";
+    let color = "";
+
+    [...header.querySelectorAll("*")].forEach((element) => {
+      if (
+        element === ignoredTitle ||
+        ignoredTitle.contains(element) ||
+        element.closest(".dec-slack-conversation-actions") ||
+        element.closest(".dec-slack-conversation-title-card")
+      ) {
+        return;
+      }
+
+      const text = String(element.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!exactStatusPattern.test(text)) {
+        return;
+      }
+
+      const semanticContainer = element.closest(statusContainerSelector);
+      const target =
+        semanticContainer && header.contains(semanticContainer)
+          ? semanticContainer
+          : element;
+      color ||= nativePresenceColor(target);
+      target.classList.add("dec-slack-native-presence-hidden");
+    });
+    return color;
+  }
+
+  function enhanceConversationHeader() {
+    const header = document.querySelector(
+      "#chat-window > chat-messages-header, chat-messages-header",
+    );
+    const title = header?.querySelector("#showParticipants");
+    if (!header || !title) {
+      return;
+    }
+
+    header.classList.add("dec-slack-conversation-header");
+    title.classList.add(
+      "dec-slack-conversation-title",
+      "dec-slack-native-title-hidden",
+    );
+
+    const profile = directConversationProfileFromHeader();
+    const rawTitle = String(title.textContent || "").trim();
+    const visibleTitle = profile?.name || rawTitle;
+    const presence = profile
+      ? conversationPresenceFromHeader(header, title)
+      : "";
+    const presenceColor = profile
+      ? hideNativeConversationPresence(header, title, presence)
+      : "";
+    if (!profile) {
+      header
+        .querySelectorAll(".dec-slack-native-presence-hidden")
+        .forEach((element) =>
+          element.classList.remove("dec-slack-native-presence-hidden"),
+        );
+    }
+    const headerContent = header.querySelector(".header") || header;
+    let titleCard = header.querySelector(
+      ".dec-slack-conversation-title-card[data-dec-created='true']",
+    );
+    if (!titleCard) {
+      titleCard = document.createElement("button");
+      titleCard.type = "button";
+      titleCard.className = "dec-slack-conversation-title-card";
+      titleCard.dataset.decCreated = "true";
+
+      const name = document.createElement("span");
+      name.className = "dec-slack-conversation-title-name";
+      const statusLine = document.createElement("span");
+      statusLine.className = "dec-slack-conversation-presence";
+      const statusDot = document.createElement("span");
+      statusDot.className = "dec-slack-conversation-presence-dot";
+      statusDot.setAttribute("aria-hidden", "true");
+      const statusText = document.createElement("span");
+      statusText.className = "dec-slack-conversation-presence-text";
+      statusLine.append(statusDot, statusText);
+      titleCard.append(name, statusLine);
+      headerContent.appendChild(titleCard);
+    }
+
+    titleCard.querySelector(".dec-slack-conversation-title-name").textContent =
+      visibleTitle;
+    const statusLine = titleCard.querySelector(
+      ".dec-slack-conversation-presence",
+    );
+    const statusText = titleCard.querySelector(
+      ".dec-slack-conversation-presence-text",
+    );
+    const statusDot = titleCard.querySelector(
+      ".dec-slack-conversation-presence-dot",
+    );
+    statusLine.hidden = !presence;
+    statusLine.dataset.status = conversationPresenceKind(presence);
+    statusText.textContent = presence;
+    if (presenceColor) {
+      statusDot.style.setProperty("background-color", presenceColor, "important");
+    } else {
+      statusDot.style.removeProperty("background-color");
+    }
+    titleCard.setAttribute(
+      "aria-label",
+      presence ? `${visibleTitle}, ${presence}` : visibleTitle,
+    );
+    titleCard.onclick = () => title.click();
+
+    const actionCandidates = [
+      ...new Set(
+        header.querySelectorAll("button, a.btn, [role='button'], .btn"),
+      ),
+    ].filter(
+      (control) =>
+        control !== title &&
+        !title.contains(control) &&
+        control !== titleCard &&
+        !titleCard.contains(control) &&
+        !control.closest(".dropdown-menu, [role='menu']"),
+    );
+    const actionButtons = actionCandidates.filter(
+      (control) =>
+        !actionCandidates.some(
+          (other) => other !== control && other.contains(control),
+        ),
+    );
+    actionButtons.forEach((button) => {
+      button.classList.add("dec-slack-conversation-action");
+    });
+
+    let actionContainer = header.querySelector(
+      ".dec-slack-conversation-actions[data-dec-created='true']",
+    );
+    if (!actionContainer) {
+      actionContainer = document.createElement("div");
+      actionContainer.className = "dec-slack-conversation-actions";
+      actionContainer.dataset.decCreated = "true";
+      actionContainer.setAttribute("role", "toolbar");
+      actionContainer.setAttribute(
+        "aria-label",
+        "Actions de la conversation",
+      );
+      headerContent.appendChild(actionContainer);
+    }
+
+    actionButtons.forEach((button) => {
+      if (!actionContainer.contains(button)) {
+        actionContainer.appendChild(button);
+      }
+    });
+  }
+
   function createAvatarElement() {
     const avatar = document.createElement("span");
     avatar.className = AVATAR_CLASS;
@@ -1230,9 +2118,6 @@
     const ownMessage = Boolean(
       message.querySelector(".message-inner.message-right"),
     );
-    if (!ownMessage) {
-      playCustomNotification();
-    }
     const enterClass = ownMessage ? ENTER_OWN_CLASS : ENTER_OTHER_CLASS;
     message.classList.add(enterClass);
 
@@ -1387,9 +2272,194 @@
       });
   }
 
+  function chatToastSignature(toast) {
+    const copy = toast.cloneNode(true);
+    copy.querySelectorAll("button").forEach((button) => button.remove());
+    return String(copy.textContent || "")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function isCompleteChatToast(toast) {
+    return Boolean(
+      toast.querySelector("button.btn-primary") &&
+        toast.querySelector("button.btn-gray"),
+    );
+  }
+
+  function positionChatToastStack() {
+    const stack = document.getElementById(CHAT_TOAST_STACK_ID);
+    if (!stack) {
+      return;
+    }
+
+    let top = 12;
+    document
+      .querySelectorAll(
+        "chat-searcher-component.layout-type4-header, " +
+          ".layout-type4-header, #dec-slack-controls",
+      )
+      .forEach((element) => {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          rect.height > 0
+        ) {
+          top = Math.max(top, rect.bottom + 12);
+        }
+      });
+    stack.style.setProperty("top", `${Math.ceil(top)}px`, "important");
+  }
+
+  function ensureChatToastStack() {
+    let stack = document.getElementById(CHAT_TOAST_STACK_ID);
+    if (!stack && document.body) {
+      stack = document.createElement("div");
+      stack.id = CHAT_TOAST_STACK_ID;
+      stack.setAttribute("role", "region");
+      stack.setAttribute("aria-label", "Notifications 3CX");
+      document.body.appendChild(stack);
+    }
+
+    if (!chatToastStackInitialized) {
+      chatToastStackInitialized = true;
+      window.addEventListener("resize", positionChatToastStack);
+      document.addEventListener("scroll", positionChatToastStack, true);
+    }
+    positionChatToastStack();
+    return stack;
+  }
+
+  function enhanceChatToastAppearance(toast) {
+    const stack = ensureChatToastStack();
+    if (stack && toast.parentElement !== stack) {
+      stack.appendChild(toast);
+    }
+    if (enhancedChatToasts.has(toast)) {
+      return;
+    }
+    enhancedChatToasts.add(toast);
+    toast.classList.add("dec-slack-chat-toast");
+    toast.setAttribute("role", "button");
+    toast.setAttribute("tabindex", "0");
+    toast.setAttribute(
+      "aria-label",
+      "Ouvrir la conversation de cette notification",
+    );
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "dec-slack-chat-toast-close";
+    closeButton.setAttribute("aria-label", "Fermer la notification");
+    closeButton.title = "Fermer";
+    closeButton.textContent = "×";
+    toast.appendChild(closeButton);
+
+    toast.addEventListener("click", (event) => {
+      if (event.target.closest(".dec-slack-chat-toast-close")) {
+        event.stopPropagation();
+        toast.querySelector("button.btn-gray")?.click();
+        return;
+      }
+
+      // Évite la récursion lorsque le clic natif Répondre remonte jusqu'ici.
+      if (event.target.closest("button.btn-primary, button.btn-gray")) {
+        return;
+      }
+      toast.querySelector("button.btn-primary")?.click();
+    });
+
+    toast.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toast.querySelector("button.btn-primary")?.click();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        toast.querySelector("button.btn-gray")?.click();
+      }
+    });
+  }
+
+  function processChatToastNotification(toast) {
+    if (!toast?.isConnected || !isCompleteChatToast(toast)) {
+      return;
+    }
+
+    enhanceChatToastAppearance(toast);
+    const signature = chatToastSignature(toast);
+    if (!signature || knownChatToasts.get(toast) === signature) {
+      return;
+    }
+
+    knownChatToasts.set(toast, signature);
+    if (initialChatToasts.has(toast)) {
+      initialChatToasts.delete(toast);
+      return;
+    }
+
+    playCustomNotification();
+  }
+
+  function chatToastsFromMutation(mutation) {
+    const toasts = new Set();
+    const targetElement =
+      mutation.target.nodeType === Node.ELEMENT_NODE
+        ? mutation.target
+        : mutation.target.parentElement;
+    const targetToast = targetElement?.closest?.(CHAT_TOAST_SELECTOR);
+    if (targetToast) {
+      toasts.add(targetToast);
+    }
+
+    mutation.addedNodes.forEach((node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return;
+      }
+
+      if (node.matches(CHAT_TOAST_SELECTOR)) {
+        toasts.add(node);
+      }
+      node.querySelectorAll(CHAT_TOAST_SELECTOR).forEach((toast) => {
+        toasts.add(toast);
+      });
+    });
+
+    return toasts;
+  }
+
+  function initializeChatToastNotifications() {
+    if (chatToastObserver) {
+      return;
+    }
+
+    ensureChatToastStack();
+    document.querySelectorAll(CHAT_TOAST_SELECTOR).forEach((toast) => {
+      initialChatToasts.add(toast);
+      processChatToastNotification(toast);
+    });
+
+    chatToastObserver = new MutationObserver((mutations) => {
+      const candidateToasts = new Set();
+      mutations.forEach((mutation) => {
+        chatToastsFromMutation(mutation).forEach((toast) => {
+          candidateToasts.add(toast);
+        });
+      });
+      candidateToasts.forEach(processChatToastNotification);
+    });
+    chatToastObserver.observe(document.documentElement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+
   function enhanceVisibleMessages() {
     installAvatarStyles();
     ensureControls();
+    enhanceConversationHeader();
     synchronizeDirectConversationProfile();
     const profiles = buildParticipantMap();
     const messages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
@@ -1421,10 +2491,13 @@
   applyPreferences();
   ensureControls();
   initializeCustomEmojis();
+  initializeEmojiAutocomplete();
+  initializeChatToastNotifications();
 
   const observer = new MutationObserver(scheduleUpdate);
   observer.observe(document.documentElement, {
     childList: true,
+    characterData: true,
     subtree: true,
   });
 
