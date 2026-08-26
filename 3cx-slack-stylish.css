@@ -2880,3 +2880,67 @@ chat-messages-header .avatar-container > *,
 ) {
   border-radius: 10px !important;
 }
+
+/* ==========================================================
+   V19 — ACCUSÉ DE LECTURE UNIQUE ET PORTRAIT DU CONTACT
+   ========================================================== */
+
+/* Si un message plus récent est lu, les accusés de tous les messages qui le
+   précèdent deviennent redondants. Le userscript marque seulement le dernier. */
+chat-message:not(.dec-slack-latest-read) delivered-check {
+  display: none !important;
+}
+
+chat-message.dec-slack-latest-read {
+  position: relative !important;
+}
+
+/* Dans une conversation individuelle, le double check natif est remplacé par
+   un portrait injecté dans le wrapper pleine largeur. Ce conteneur est un bloc
+   explicite dans Chrome comme dans Firefox, contrairement au composant Angular
+   chat-message dont le bloc de positionnement dépend du moteur de rendu. */
+chat-message.dec-slack-latest-read
+  delivered-check.dec-slack-native-read-hidden {
+  display: none !important;
+}
+
+chat-message.dec-slack-latest-read
+  .message-outter-wrapper {
+  position: relative !important;
+  width: 100% !important;
+  overflow: visible !important;
+}
+
+chat-message.dec-slack-latest-read
+  .message-outter-wrapper
+  > .dec-slack-read-avatar[data-dec-created="true"],
+chat-message.dec-slack-latest-read
+  > .dec-slack-read-avatar[data-dec-created="true"] {
+  position: absolute !important;
+  z-index: 8 !important;
+  top: auto !important;
+  right: 10px !important;
+  bottom: 3px !important;
+  left: auto !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 14px !important;
+  min-width: 14px !important;
+  height: 14px !important;
+  min-height: 14px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  color: transparent !important;
+  background-color: var(--slack-surface) !important;
+  background-image: var(--dec-read-receipt-avatar) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  border: 1px solid var(--slack-line) !important;
+  border-radius: 7px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24) !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  pointer-events: none !important;
+}
