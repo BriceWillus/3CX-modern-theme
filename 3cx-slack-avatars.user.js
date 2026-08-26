@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.5.5
+// @version      1.5.8
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -31,6 +31,7 @@
   const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
+  const STORAGE_OWN_PROFILE = "decSlackOwnProfile";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
   const EMOJI_AUTOCOMPLETE_ID = "dec-slack-emoji-autocomplete";
   const CUSTOM_EMOJI_REFRESH_MS = 5 * 60 * 1000;
@@ -83,6 +84,7 @@
     }
   })();
   let originalPreviewObserver = null;
+  let currentOwnProfile = null;
 
   if (window[SCRIPT_MARKER]) {
     return;
@@ -410,15 +412,13 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      chat-message:has(> .message-name)
-        .message-inner:has(> .${AVATAR_CLASS})::before {
+      chat-message .message-inner:has(> .${AVATAR_CLASS})::before {
         content: none !important;
         display: none !important;
         background-image: none !important;
       }
 
-      chat-message:has(> .message-name)
-        .message-inner > .${AVATAR_CLASS} {
+      chat-message .message-inner > .${AVATAR_CLASS} {
         position: static !important;
         z-index: 4 !important;
         inset: auto !important;
@@ -1603,6 +1603,189 @@
     };
   }
 
+  function readCachedOwnProfile() {
+    try {
+      const value = JSON.parse(
+        window.localStorage.getItem(STORAGE_OWN_PROFILE) || "null",
+      );
+      if (!value || typeof value !== "object") {
+        return null;
+      }
+      const extension = String(value.extension || "").trim();
+      const name = String(value.name || "").trim();
+      if (!/^\d{1,5}$/.test(extension) || !name) {
+        return null;
+      }
+      return {
+        extension,
+        name,
+        imageUrl: String(value.imageUrl || ""),
+        initials:
+          String(value.initials || "").trim() || initialsFromName(name),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCachedOwnProfile(profile) {
+    try {
+      window.localStorage.setItem(
+        STORAGE_OWN_PROFILE,
+        JSON.stringify({
+          extension: profile.extension,
+          name: profile.name,
+          imageUrl: profile.imageUrl || "",
+          initials: profile.initials || initialsFromName(profile.name),
+        }),
+      );
+    } catch {
+      // L'identité reste utilisable pendant la session si le stockage est bloqué.
+    }
+  }
+
+  function ownProfileFromVisibleMessages(profiles) {
+    const names = [
+      ...document.querySelectorAll(
+        "chat-message > .message-name.message-right",
+      ),
+    ];
+    for (let index = names.length - 1; index >= 0; index -= 1) {
+      const fullName = String(names[index].textContent || "").trim();
+      const extension = extensionFromText(fullName);
+      if (!extension) {
+        continue;
+      }
+      const name = fullName
+        .replace(new RegExp(`\\s*${extension}\\s*$`), "")
+        .trim();
+      const known = profiles.get(extension);
+      return {
+        extension,
+        name: known?.name || name,
+        imageUrl: known?.imageUrl || "",
+        initials:
+          known?.initials || initialsFromName(known?.name || name),
+      };
+    }
+    return null;
+  }
+
+  function ownProfileFromDirectParticipants() {
+    const contact = directConversationProfileFromHeader();
+    if (!contact) {
+      return null;
+    }
+
+    const participants = [
+      ...document.querySelectorAll(PARTICIPANT_SELECTOR),
+    ]
+      .map(participantProfileFromRow)
+      .filter(Boolean);
+    const ownCandidates = participants.filter(
+      (profile) => profile.extension !== contact.extension,
+    );
+    return ownCandidates.length === 1 ? ownCandidates[0] : null;
+  }
+
+  function ownProfileImageFromApplicationHeader() {
+    const candidates = [
+      ...document.querySelectorAll(
+        '[data-qa="profile-image"], ' +
+          '.avatar-content[data-qa="profile-image"], ' +
+          '.avatar-contant[data-qa="profile-image"]',
+      ),
+    ];
+
+    for (const candidate of candidates) {
+      const image = candidate.matches("img")
+        ? candidate
+        : candidate.querySelector("img");
+      const imageUrl = image?.currentSrc || image?.src || "";
+      if (imageUrl) {
+        return imageUrl;
+      }
+
+      for (const element of [candidate, ...candidate.querySelectorAll("*")]) {
+        const backgroundImage = window.getComputedStyle(element).backgroundImage;
+        const match = String(backgroundImage || "").match(
+          /^url\(["']?(.*?)["']?\)$/,
+        );
+        if (match?.[1]) {
+          return match[1];
+        }
+      }
+    }
+    return "";
+  }
+
+  function synchronizeOwnProfile(profiles) {
+    const detected =
+      ownProfileFromVisibleMessages(profiles) ||
+      ownProfileFromDirectParticipants();
+    const cached = readCachedOwnProfile();
+    const applicationProfileImage = ownProfileImageFromApplicationHeader();
+    const matchingCached =
+      detected && cached?.extension === detected.extension ? cached : null;
+    const profile = detected
+      ? {
+          ...detected,
+          imageUrl:
+            applicationProfileImage ||
+            detected.imageUrl ||
+            matchingCached?.imageUrl ||
+            "",
+          initials:
+            detected.initials ||
+            matchingCached?.initials ||
+            initialsFromName(detected.name),
+        }
+      : cached
+        ? {
+            ...cached,
+            imageUrl: applicationProfileImage || cached.imageUrl || "",
+          }
+        : null;
+
+    if (!profile?.name) {
+      currentOwnProfile = {
+        extension: "",
+        name: "Moi",
+        imageUrl: applicationProfileImage,
+        initials: "",
+      };
+      document.documentElement.style.setProperty(
+        "--slack-me-name",
+        JSON.stringify("Moi"),
+      );
+      if (applicationProfileImage) {
+        document.documentElement.style.setProperty(
+          "--slack-me-avatar",
+          `url(${JSON.stringify(applicationProfileImage)})`,
+        );
+      } else {
+        document.documentElement.style.removeProperty("--slack-me-avatar");
+      }
+      return;
+    }
+
+    if (applicationProfileImage && !profile.imageUrl) {
+      profile.imageUrl = applicationProfileImage;
+    }
+    currentOwnProfile = profile;
+    writeCachedOwnProfile(profile);
+    document.documentElement.style.setProperty(
+      "--slack-me-name",
+      JSON.stringify(profile.name),
+    );
+    document.documentElement.style.setProperty(
+      "--slack-me-avatar",
+      profile.imageUrl
+        ? `url(${JSON.stringify(profile.imageUrl)})`
+        : initialsAvatarCssUrl(profile),
+    );
+  }
+
   function buildParticipantMap() {
     const profiles = new Map(profileCache);
 
@@ -2073,16 +2256,50 @@
 
   function enhanceMessage(message, profiles) {
     const nameElement = message.querySelector(":scope > .message-name");
-    if (!nameElement) {
+    const messageInner = message.querySelector(".message-inner");
+    if (!messageInner) {
       return;
     }
 
-    const visibleName = String(nameElement.textContent || "").trim();
-    const extension = extensionFromText(visibleName);
-    const messageInner = message.querySelector(".message-inner");
+    const ownMessage = messageInner.classList.contains("message-right");
+    let visibleName = "";
+    let extension = "";
+    let avatarProfile = null;
 
-    if (!extension || !messageInner) {
-      return;
+    if (nameElement) {
+      visibleName = String(nameElement.textContent || "").trim();
+      extension = extensionFromText(visibleName);
+      if (!extension) {
+        return;
+      }
+
+      const knownProfile = profiles.get(extension);
+      avatarProfile =
+        ownMessage && currentOwnProfile?.imageUrl
+          ? {
+              ...knownProfile,
+              ...currentOwnProfile,
+              extension,
+              name: currentOwnProfile.name || knownProfile?.name || "Moi",
+            }
+          : knownProfile;
+    } else {
+      const startsMessageGroup = messageInner.querySelector(
+        ":scope > .message-text.new-sender",
+      );
+      if (!startsMessageGroup) {
+        return;
+      }
+
+      avatarProfile = ownMessage
+        ? currentOwnProfile
+        : directConversationProfileFromHeader();
+      if (!avatarProfile) {
+        return;
+      }
+      visibleName = avatarProfile.name || (ownMessage ? "Moi" : "Interlocuteur");
+      extension =
+        avatarProfile.extension || (ownMessage ? "self" : "contact");
     }
 
     let avatar = messageInner.querySelector(`:scope > .${AVATAR_CLASS}`);
@@ -2093,7 +2310,7 @@
 
     applyProfileToAvatar(
       avatar,
-      profiles.get(extension),
+      avatarProfile,
       visibleName.replace(/\s*\d+\s*$/, ""),
       extension,
     );
@@ -2462,6 +2679,7 @@
     enhanceConversationHeader();
     synchronizeDirectConversationProfile();
     const profiles = buildParticipantMap();
+    synchronizeOwnProfile(profiles);
     const messages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
     const animationStartIndex = Math.max(0, messages.length - 3);
 
