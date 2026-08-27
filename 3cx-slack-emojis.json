@@ -4,6 +4,39 @@
     "url": "sounds/universfield-new-notification-040-493469.mp3",
     "volume": 1
   },
+  "defaultNotificationSound": "notification_040",
+  "notificationSounds": {
+    "dragon_notification_3": {
+      "label": "Notification 3",
+      "url": "sounds/dragon-studio-new-notification-3-398649.mp3",
+      "volume": 1
+    },
+    "gaming_lock": {
+      "label": "Gaming lock",
+      "url": "sounds/mixkit-gaming-lock-2848.wav",
+      "volume": 1
+    },
+    "long_pop": {
+      "label": "Long pop",
+      "url": "sounds/mixkit-long-pop-2358.wav",
+      "volume": 1
+    },
+    "message_pop": {
+      "label": "Message pop",
+      "url": "sounds/mixkit-message-pop-alert-2354.mp3",
+      "volume": 1
+    },
+    "notification_018": {
+      "label": "Notification 018",
+      "url": "sounds/universfield-new-notification-018-363746.mp3",
+      "volume": 1
+    },
+    "notification_040": {
+      "label": "Notification 040",
+      "url": "sounds/universfield-new-notification-040-493469.mp3",
+      "volume": 1
+    }
+  },
   "emojis": {
     "ah_ultime": {
       "url": "emojis/ah_ultime.gif",
