@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.6.2
+// @version      1.7.5
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -26,6 +26,11 @@
   const LATEST_READ_CLASS = "dec-slack-latest-read";
   const READ_AVATAR_CLASS = "dec-slack-read-avatar";
   const HIDDEN_READ_RECEIPT_CLASS = "dec-slack-native-read-hidden";
+  const REDUNDANT_READ_RECEIPT_CLASS = "dec-slack-redundant-read";
+  const HIDDEN_SENT_RECEIPT_CLASS = "dec-slack-native-sent-hidden";
+  const SENT_RECEIPT_COPY_CLASS = "dec-slack-sent-receipt-copy";
+  const TYPING_INDICATOR_ID = "dec-slack-typing-indicator";
+  const HIDDEN_NATIVE_TYPING_CLASS = "dec-slack-native-typing-hidden";
   const CONTROLS_ID = "dec-slack-controls";
   const STORAGE_LAYOUT = "decSlackLayout";
   const STORAGE_THEME = "decSlackTheme";
@@ -59,6 +64,7 @@
   const INLINE_CUSTOM_EMOJIS = {};
 
   const knownMessages = new WeakSet();
+  const receiptAnalysisCache = new WeakMap();
   const knownChatToasts = new WeakMap();
   const initialChatToasts = new WeakSet();
   const enhancedChatToasts = new WeakSet();
@@ -2261,6 +2267,7 @@
   function createAvatarElement() {
     const avatar = document.createElement("span");
     avatar.className = AVATAR_CLASS;
+    avatar.dataset.decCreated = "true";
     avatar.setAttribute("aria-hidden", "true");
     return avatar;
   }
@@ -2288,6 +2295,357 @@
       avatar.style.backgroundColor = colorForExtension(extension);
       avatar.style.backgroundImage = "none";
     }
+  }
+
+  function normalizedTypingText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[’‘]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("fr-FR");
+  }
+
+  function containsTypingText(value) {
+    const text = normalizedTypingText(value);
+    if (!text || text.length > 180) {
+      return false;
+    }
+    return /\b(?:typing|is typing|are typing|ecrit|ecrivent|en train d'ecrire|en cours d'ecriture|redige|redigent|redaction en cours)\s*(?:\.{2,3}|…)?$/.test(text);
+  }
+
+  function nativeTypingElementText(element) {
+    return [
+      element.textContent,
+      element.getAttribute("aria-label"),
+      element.getAttribute("title"),
+      element.getAttribute("data-status"),
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function activeConversationChatItem() {
+    const directProfile = directConversationProfileFromHeader();
+    const nativeTitle = String(
+      document
+        .querySelector("chat-messages-header #showParticipants")
+        ?.textContent || "",
+    ).trim();
+    const expectedLabels = [
+      nativeTitle,
+      directProfile
+        ? `${directProfile.name} ${directProfile.extension}`
+        : "",
+      directProfile?.name,
+    ]
+      .filter(Boolean)
+      .map(normalizedTypingText);
+    const items = [...document.querySelectorAll("chat-item")];
+    const routeId = String(
+      window.location.hash.match(/^#\/chat\/([^/?#]+)/)?.[1] || "",
+    );
+    const routeFragment = routeId ? `/chat/${routeId}` : "";
+    const routeItem = routeFragment
+      ? items.find((item) =>
+          [
+            item,
+            ...item.querySelectorAll(
+              "[href], [routerlink], [ng-reflect-router-link]",
+            ),
+          ].some(
+            (element) =>
+              [
+                element.getAttribute("href"),
+                element.getAttribute("routerlink"),
+                element.getAttribute("ng-reflect-router-link"),
+              ].some((value) => String(value || "").includes(routeFragment)),
+          ),
+        )
+      : null;
+
+    return (
+      routeItem ||
+      items.find((item) => {
+        const label = normalizedTypingText(
+          item.querySelector(".header-name")?.textContent || "",
+        );
+        return expectedLabels.some(
+          (expected) => label === expected || label.startsWith(`${expected} `),
+        );
+      }) ||
+      items.find((item) =>
+        Boolean(
+          item.matches(
+            ".active, .selected, [aria-current='page'], [data-selected='true']",
+          ) ||
+            item.closest(
+              ".active, .selected, [aria-current='page'], [data-selected='true']",
+            ),
+        ),
+      ) ||
+      null
+    );
+  }
+
+  function nativeTypingElements() {
+    const header = document.querySelector("chat-messages-header");
+    if (!header) {
+      return [];
+    }
+
+    const activeItem = activeConversationChatItem();
+    const candidates = new Set(header.querySelectorAll("*"));
+    if (activeItem) {
+      candidates.add(activeItem);
+    }
+    activeItem?.querySelectorAll("*").forEach((element) =>
+      candidates.add(element),
+    );
+    const matches = [...candidates].filter(
+      (element) =>
+        !element.closest(`#${TYPING_INDICATOR_ID}`) &&
+        !element.querySelector("chat-message, #chat-form-controls") &&
+        containsTypingText(nativeTypingElementText(element)),
+    );
+
+    /* Ne conserve que le nœud le plus précis portant le texte. Sans ce filtre,
+       toute la barre d'en-tête pourrait être masquée avec son enfant natif. */
+    return matches.filter(
+      (element) =>
+        !matches.some(
+          (other) => other !== element && element.contains(other),
+        ),
+    );
+  }
+
+  function imageUrlFromCssBackground(value) {
+    const match = String(value || "").match(/^url\(["']?(.*?)["']?\)$/i);
+    return match?.[1] || "";
+  }
+
+  function typingProfileCandidates(profiles) {
+    const candidates = new Map(profiles);
+
+    document
+      .querySelectorAll(`${MESSAGE_SELECTOR} > .message-name`)
+      .forEach((nameElement) => {
+        const fullName = String(nameElement.textContent || "").trim();
+        const extension = extensionFromText(fullName);
+        if (!extension) {
+          return;
+        }
+
+        const name = fullName
+          .replace(new RegExp(`\\s*${extension}\\s*$`), "")
+          .trim();
+        const known = candidates.get(extension);
+        const avatar = nameElement.parentElement?.querySelector(
+          `.${AVATAR_CLASS}`,
+        );
+        const imageUrl =
+          known?.imageUrl ||
+          imageUrlFromCssBackground(avatar?.style.backgroundImage);
+        candidates.set(extension, {
+          extension,
+          name: known?.name || name,
+          imageUrl,
+          initials:
+            known?.initials ||
+            String(avatar?.textContent || "").trim() ||
+            initialsFromName(known?.name || name),
+        });
+      });
+
+    return [...candidates.values()].filter(
+      (profile) =>
+        profile?.extension &&
+        profile.extension !== currentOwnProfile?.extension &&
+        profile.name,
+    );
+  }
+
+  function profilesFromTypingElements(elements, profiles) {
+    if (elements.length === 0) {
+      return [];
+    }
+
+    const directProfile = directConversationProfileFromHeader();
+    if (directProfile) {
+      return [directProfile];
+    }
+
+    const combinedText = normalizedTypingText(
+      elements.map(nativeTypingElementText).join(" "),
+    );
+    const candidates = typingProfileCandidates(profiles);
+    const matchedExtensions = new Set();
+
+    elements.forEach((element) => {
+      element
+        .querySelectorAll("app-avatar img[alt], img.avatar-content[alt]")
+        .forEach((image) => {
+          const extension = String(image.getAttribute("alt") || "").trim();
+          if (/^\d{1,5}$/.test(extension)) {
+            matchedExtensions.add(extension);
+          }
+        });
+    });
+
+    const firstNameCounts = new Map();
+    candidates.forEach((profile) => {
+      const firstName = normalizedTypingText(profile.name).split(" ")[0];
+      if (firstName) {
+        firstNameCounts.set(firstName, (firstNameCounts.get(firstName) || 0) + 1);
+      }
+    });
+
+    const matchPosition = new Map();
+    candidates.forEach((profile) => {
+      const normalizedName = normalizedTypingText(profile.name);
+      const firstName = normalizedName.split(" ")[0];
+      const escapedExtension = String(profile.extension).replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+      const fullNamePosition = normalizedName
+        ? combinedText.indexOf(normalizedName)
+        : -1;
+      const uniqueFirstNamePosition =
+        firstName && firstNameCounts.get(firstName) === 1
+          ? combinedText.search(
+              new RegExp(
+                `(?:^|[^a-z0-9])${firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^a-z0-9]|$)`,
+              ),
+            )
+          : -1;
+      const extensionPosition = combinedText.search(
+        new RegExp(`(?:^|\\D)${escapedExtension}(?:\\D|$)`),
+      );
+      const positions = [
+        fullNamePosition,
+        uniqueFirstNamePosition,
+        extensionPosition,
+      ].filter((position) => position >= 0);
+      if (positions.length > 0) {
+        matchedExtensions.add(profile.extension);
+        matchPosition.set(profile.extension, Math.min(...positions));
+      }
+    });
+
+    return candidates
+      .filter((profile) => matchedExtensions.has(profile.extension))
+      .sort(
+        (left, right) =>
+          (matchPosition.get(left.extension) ?? Number.MAX_SAFE_INTEGER) -
+          (matchPosition.get(right.extension) ?? Number.MAX_SAFE_INTEGER),
+      );
+  }
+
+  function ensureTypingIndicator() {
+    const messages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
+    const lastMessage = messages.at(-1) || null;
+    const host = lastMessage?.parentElement;
+    if (!lastMessage || !host) {
+      document.getElementById(TYPING_INDICATOR_ID)?.remove();
+      return null;
+    }
+
+    let indicator = document.getElementById(TYPING_INDICATOR_ID);
+    if (!indicator) {
+      indicator = document.createElement("div");
+      indicator.id = TYPING_INDICATOR_ID;
+      indicator.hidden = true;
+      indicator.setAttribute("role", "status");
+      indicator.setAttribute("aria-live", "polite");
+
+      const avatars = document.createElement("span");
+      avatars.className = "dec-slack-typing-avatars";
+      const dots = document.createElement("span");
+      dots.className = "dec-slack-typing-dots";
+      dots.setAttribute("aria-hidden", "true");
+      for (let index = 0; index < 3; index += 1) {
+        dots.appendChild(document.createElement("i"));
+      }
+      indicator.append(avatars, dots);
+    }
+
+    if (
+      indicator.parentElement !== host ||
+      lastMessage.nextSibling !== indicator
+    ) {
+      host.insertBefore(indicator, lastMessage.nextSibling);
+    }
+    return indicator;
+  }
+
+  function enhanceTypingIndicator(profiles) {
+    const elements = nativeTypingElements();
+    const activeElements = new Set(elements);
+    document
+      .querySelectorAll(`.${HIDDEN_NATIVE_TYPING_CLASS}`)
+      .forEach((element) => {
+        if (!activeElements.has(element)) {
+          element.classList.remove(HIDDEN_NATIVE_TYPING_CLASS);
+        }
+      });
+
+    const indicator = ensureTypingIndicator();
+    if (!indicator) {
+      return;
+    }
+
+    const typingProfiles = profilesFromTypingElements(elements, profiles);
+    if (elements.length === 0 || typingProfiles.length === 0) {
+      indicator.hidden = true;
+      delete indicator.dataset.decTypingProfiles;
+      indicator.removeAttribute("aria-label");
+      indicator.querySelector(".dec-slack-typing-avatars")?.replaceChildren();
+      return;
+    }
+
+    elements.forEach((element) => {
+      /* Dans la colonne des conversations, l'état natif reste utile pour voir
+         l'activité même lorsque le fil n'est pas au premier plan. */
+      if (!element.closest("chat-item")) {
+        element.classList.add(HIDDEN_NATIVE_TYPING_CLASS);
+      }
+    });
+    const profileKey = typingProfiles
+      .map(
+        (profile) =>
+          `${profile.extension}|${profile.name}|${profile.imageUrl}|${profile.initials}`,
+      )
+      .join(";");
+
+    if (indicator.dataset.decTypingProfiles !== profileKey) {
+      indicator.dataset.decTypingProfiles = profileKey;
+      const avatarContainer = indicator.querySelector(
+        ".dec-slack-typing-avatars",
+      );
+      const avatars = typingProfiles.map((profile) => {
+        const avatar = document.createElement("span");
+        avatar.className = "dec-slack-typing-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        applyProfileToAvatar(
+          avatar,
+          profile,
+          profile.name,
+          profile.extension,
+        );
+        return avatar;
+      });
+      avatarContainer.replaceChildren(...avatars);
+    }
+
+    const names = typingProfiles.map((profile) => profile.name);
+    const label =
+      names.length === 1
+        ? `${names[0]} écrit…`
+        : `${names.join(", ")} écrivent…`;
+    indicator.setAttribute("aria-label", label);
+    indicator.hidden = false;
   }
 
   function enhanceMessage(message, profiles) {
@@ -2352,38 +2710,382 @@
     );
   }
 
-  function enhanceReadReceipts() {
-    const messagesWithReceipt = [
-      ...document.querySelectorAll(`${MESSAGE_SELECTOR}:has(delivered-check)`),
-    ];
-    const latestMessage = messagesWithReceipt.at(-1) || null;
-    const previousLatest = document.querySelector(
-      `${MESSAGE_SELECTOR}.${LATEST_READ_CLASS}`,
-    );
+  function receiptLooksRead(receipt) {
+    const nodes = [receipt, ...receipt.querySelectorAll("*")];
+    const metadata = nodes
+      .flatMap((node) => [
+        node.className?.baseVal || node.className,
+        node.getAttribute?.("aria-label"),
+        node.getAttribute?.("title"),
+        node.getAttribute?.("data-qa"),
+        node.getAttribute?.("data-status"),
+        node.getAttribute?.("data-icon"),
+        node.getAttribute?.("href"),
+        node.getAttribute?.("xlink:href"),
+      ])
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("en-US");
 
-    if (previousLatest && previousLatest !== latestMessage) {
-      previousLatest.classList.remove(LATEST_READ_CLASS);
+    /* 3CX a utilisé plusieurs bibliothèques d'icônes selon ses versions.
+       On ne considère jamais « delivered » comme une preuve de lecture. */
+    if (
+      /(?:^|[\s_-])(?:read|seen|double[-_ ]?check|check[-_ ]?double|check[-_ ]?all|done[-_ ]?all)(?:$|[\s_-])/.test(
+        metadata,
+      )
+    ) {
+      return true;
     }
-    const latestReceipt = latestMessage?.querySelector("delivered-check") || null;
-    const directProfile = latestMessage
+
+    const visibleText = String(receipt.textContent || "");
+    if ((visibleText.match(/[✓✔☑]/g) || []).length >= 2) {
+      return true;
+    }
+
+    const renderedStateCache = new WeakMap();
+    const isRenderedInsideReceipt = (node) => {
+      if (renderedStateCache.has(node)) {
+        return renderedStateCache.get(node);
+      }
+
+      const visited = [];
+      let rendered = true;
+      for (
+        let current = node;
+        current && current !== receipt.parentElement;
+        current = current.parentElement
+      ) {
+        if (renderedStateCache.has(current)) {
+          rendered = renderedStateCache.get(current);
+          break;
+        }
+        visited.push(current);
+        const style = window.getComputedStyle(current);
+        if (
+          style.display === "none" ||
+          style.visibility === "hidden" ||
+          Number.parseFloat(style.opacity) === 0
+        ) {
+          rendered = false;
+          break;
+        }
+      }
+      visited.forEach((element) => renderedStateCache.set(element, rendered));
+      return rendered;
+    };
+    const checkIcons = nodes.filter((node) => {
+      const value = [
+        node.className?.baseVal || node.className,
+        node.getAttribute?.("data-icon"),
+        node.getAttribute?.("href"),
+        node.getAttribute?.("xlink:href"),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return /(?:check|done)/i.test(value) && isRenderedInsideReceipt(node);
+    });
+    const leafCheckIcons = checkIcons.filter(
+      (node) =>
+        !checkIcons.some(
+          (other) => other !== node && node.contains(other),
+        ),
+    );
+    if (leafCheckIcons.length >= 2) {
+      return true;
+    }
+
+    const visibleShapes = nodes.filter(
+      (node) =>
+        node.matches?.("path, polyline, polygon, line") &&
+        isRenderedInsideReceipt(node),
+    );
+    if (visibleShapes.length >= 2) {
+      return true;
+    }
+
+    const subpathCount = visibleShapes.reduce((total, node) => {
+      const pathData = node.getAttribute?.("d") || "";
+      return total + (pathData.match(/[Mm]/g) || []).length;
+    }, 0);
+    if (subpathCount >= 2) {
+      return true;
+    }
+
+    let pseudoGraphicCount = 0;
+    let pseudoCheckGlyphCount = 0;
+    nodes.forEach((node) => {
+      if (!isRenderedInsideReceipt(node)) {
+        return;
+      }
+      ["::before", "::after"].forEach((pseudo) => {
+        const style = window.getComputedStyle(node, pseudo);
+        const content = String(style.content || "");
+        const hasContent = !/^(?:none|normal|""|'')$/i.test(content);
+        const hasImage = [
+          style.backgroundImage,
+          style.maskImage,
+          style.webkitMaskImage,
+        ].some((value) => value && value !== "none");
+        if (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          Number.parseFloat(style.opacity) !== 0 &&
+          (hasContent || hasImage)
+        ) {
+          pseudoGraphicCount += 1;
+          pseudoCheckGlyphCount += (content.match(/[✓✔☑]/g) || []).length;
+        }
+      });
+    });
+    return pseudoGraphicCount >= 2 || pseudoCheckGlyphCount >= 2;
+  }
+
+  function receiptVisualSignature(receipt) {
+    const clone = receipt.cloneNode(true);
+    clone
+      .querySelectorAll("[data-dec-created], [data-dec-read-profile]")
+      .forEach((element) => {
+        delete element.dataset.decCreated;
+        delete element.dataset.decReadProfile;
+      });
+    [clone, ...clone.querySelectorAll("*")].forEach((element) => {
+      [...element.classList]
+        .filter((className) => className.startsWith("dec-slack-"))
+        .forEach((className) => element.classList.remove(className));
+    });
+    const renderedSignature = [receipt, ...receipt.querySelectorAll("*")]
+      .flatMap((element) => [null, "::before", "::after"].map((pseudo) => {
+        const style = window.getComputedStyle(element, pseudo);
+        return [
+          pseudo || "self",
+          style.content,
+          style.backgroundImage,
+          style.maskImage,
+          style.webkitMaskImage,
+          style.width,
+          style.height,
+          style.fontFamily,
+        ].join(":");
+      }))
+      .join(";");
+    return [
+      receipt.parentElement?.className,
+      receipt.parentElement?.getAttribute("data-status"),
+      clone.className?.baseVal || clone.className,
+      clone.getAttribute("aria-label"),
+      clone.getAttribute("title"),
+      clone.getAttribute("data-status"),
+      clone.innerHTML,
+      renderedSignature,
+    ]
+      .filter(Boolean)
+      .join("|");
+  }
+
+  function nativeClassSignature(element) {
+    const className = element?.className?.baseVal || element?.className || "";
+    return String(className)
+      .split(/\s+/)
+      .filter((name) => name && !name.startsWith("dec-slack-"))
+      .sort()
+      .join(".");
+  }
+
+  function nativeAttributeSignature(element) {
+    if (!element?.attributes) {
+      return "";
+    }
+    return [...element.attributes]
+      .filter(
+        (attribute) =>
+          attribute.name !== "class" &&
+          !attribute.name.startsWith("data-dec-") &&
+          !attribute.name.startsWith("aria-dec-"),
+      )
+      .map((attribute) => `${attribute.name}=${attribute.value}`)
+      .sort()
+      .join(";");
+  }
+
+  function receiptAnalysisKey(receipt) {
+    const parent = receipt.parentElement;
+    const messageInner = receipt.closest(".message-inner");
+    const message = receipt.closest(MESSAGE_SELECTOR);
+    const nativeState = (element) => [
+      nativeClassSignature(element),
+      nativeAttributeSignature(element),
+    ].join(":");
+
+    /* innerHTML capture les changements d'icône natifs (simple/double check)
+       sans forcer de recalcul de style. Les classes injectées par le thème sont
+       retirées de la clé afin que nos propres mises à jour ne l'invalident pas. */
+    return [
+      nativeState(message),
+      nativeState(messageInner),
+      nativeState(parent),
+      nativeState(receipt),
+      receipt.innerHTML,
+    ].join("|");
+  }
+
+  function analyzeReceipt(receipt) {
+    const key = receiptAnalysisKey(receipt);
+    const cached = receiptAnalysisCache.get(receipt);
+    if (cached?.key === key) {
+      return cached.analysis;
+    }
+
+    const presentationClasses = [
+      HIDDEN_READ_RECEIPT_CLASS,
+      HIDDEN_SENT_RECEIPT_CLASS,
+      REDUNDANT_READ_RECEIPT_CLASS,
+    ];
+    const activePresentationClasses = presentationClasses.filter((className) =>
+      receipt.classList.contains(className),
+    );
+    receipt.classList.remove(...presentationClasses);
+
+    let analysis;
+    try {
+      analysis = {
+        isRead: receiptLooksRead(receipt),
+        signature: receiptVisualSignature(receipt),
+      };
+    } finally {
+      if (activePresentationClasses.length > 0) {
+        receipt.classList.add(...activePresentationClasses);
+      }
+    }
+    receiptAnalysisCache.set(receipt, { key, analysis });
+    return analysis;
+  }
+
+  function fullWidthReceiptHost(message) {
+    if (message.querySelector(":scope > .message-name")) {
+      return message;
+    }
+    return message.querySelector(".message-outter-wrapper") || message;
+  }
+
+  function ensureSentReceiptCopy(receipt, host) {
+    let copy = Array.from(host.children).find(
+      (child) =>
+        child.classList.contains(SENT_RECEIPT_COPY_CLASS) &&
+        child.dataset.decCreated === "true",
+    );
+    if (!copy) {
+      copy = receipt.cloneNode(true);
+      copy.removeAttribute("id");
+      copy.classList.remove(
+        HIDDEN_READ_RECEIPT_CLASS,
+        HIDDEN_SENT_RECEIPT_CLASS,
+        REDUNDANT_READ_RECEIPT_CLASS,
+        READ_AVATAR_CLASS,
+      );
+      copy.classList.add(SENT_RECEIPT_COPY_CLASS);
+      copy.dataset.decCreated = "true";
+      copy.setAttribute("aria-hidden", "true");
+      host.appendChild(copy);
+    }
+    receipt.classList.add(HIDDEN_SENT_RECEIPT_CLASS);
+  }
+
+  function enhanceReadReceipts() {
+    const nativeReceipts = [
+      ...document.querySelectorAll(
+        `${MESSAGE_SELECTOR} delivered-check:not([data-dec-created="true"])`,
+      ),
+    ];
+    const records = nativeReceipts
+      .map((receipt) => ({
+        receipt,
+        message: receipt.closest(MESSAGE_SELECTOR),
+        ...analyzeReceipt(receipt),
+      }))
+      .filter((record) => record.message);
+    const directConversation = Boolean(directConversationProfileFromHeader());
+    if (directConversation && records.some((record) => !record.isRead)) {
+      const visibleMessages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
+      const learnedReadSignatures = new Set(
+        records
+          .filter((record) => record.isRead)
+          .map((record) => record.signature),
+      );
+
+      const messagesBeforeContactReply = new WeakSet();
+      let contactReplyFound = false;
+      for (let index = visibleMessages.length - 1; index >= 0; index -= 1) {
+        const message = visibleMessages[index];
+        if (contactReplyFound) {
+          messagesBeforeContactReply.add(message);
+        }
+        if (message.querySelector(".message-inner.message-left")) {
+          contactReplyFound = true;
+        }
+      }
+
+      records.forEach((record) => {
+        if (messagesBeforeContactReply.has(record.message)) {
+          learnedReadSignatures.add(record.signature);
+        }
+      });
+      records.forEach((record) => {
+        record.isRead ||= learnedReadSignatures.has(record.signature);
+      });
+    }
+    const readRecords = records.filter((record) => record.isRead);
+    const latestRead = readRecords.at(-1) || null;
+    const latestMessage = latestRead?.message || null;
+    const latestReceipt = latestRead?.receipt || null;
+    const directProfile = latestRead
       ? directConversationProfileFromHeader()
       : null;
     const portraitHost = latestMessage
-      ? latestMessage.querySelector(".message-outter-wrapper") || latestMessage
+      ? fullWidthReceiptHost(latestMessage)
       : null;
+    const validSentHosts = new Set();
 
-    /* Nettoyage de l'ancienne implémentation (<= 1.6.0), qui transformait
-       directement le composant delivered-check en portrait. */
-    document.querySelectorAll(`delivered-check.${READ_AVATAR_CLASS}`).forEach(
-      (receipt) => {
-        receipt.classList.remove(READ_AVATAR_CLASS);
-        receipt.style.removeProperty("--dec-read-receipt-avatar");
-        delete receipt.dataset.decReadProfile;
-        receipt.removeAttribute("role");
-        receipt.removeAttribute("aria-label");
-        receipt.removeAttribute("title");
-      },
-    );
+    document
+      .querySelectorAll(`${MESSAGE_SELECTOR}.${LATEST_READ_CLASS}`)
+      .forEach((message) => {
+        if (message !== latestMessage) {
+          message.classList.remove(LATEST_READ_CLASS);
+        }
+      });
+    latestMessage?.classList.add(LATEST_READ_CLASS);
+
+    records.forEach(({ receipt, message, isRead }) => {
+      const host = fullWidthReceiptHost(message);
+      receipt.classList.remove(READ_AVATAR_CLASS);
+      receipt.style.removeProperty("--dec-read-receipt-avatar");
+      delete receipt.dataset.decReadProfile;
+
+      if (isRead) {
+        receipt.classList.remove(HIDDEN_SENT_RECEIPT_CLASS);
+        receipt.classList.toggle(
+          REDUNDANT_READ_RECEIPT_CLASS,
+          receipt !== latestReceipt,
+        );
+        Array.from(host.children)
+          .filter((child) => child.classList.contains(SENT_RECEIPT_COPY_CLASS))
+          .forEach((copy) => copy.remove());
+      } else {
+        receipt.classList.remove(
+          HIDDEN_READ_RECEIPT_CLASS,
+          REDUNDANT_READ_RECEIPT_CLASS,
+        );
+        ensureSentReceiptCopy(receipt, host);
+        validSentHosts.add(host);
+      }
+    });
+
+    document
+      .querySelectorAll(`.${SENT_RECEIPT_COPY_CLASS}[data-dec-created="true"]`)
+      .forEach((copy) => {
+        if (!validSentHosts.has(copy.parentElement)) {
+          copy.remove();
+        }
+      });
 
     document
       .querySelectorAll(`delivered-check.${HIDDEN_READ_RECEIPT_CLASS}`)
@@ -2401,12 +3103,7 @@
         }
       });
 
-    if (!latestMessage) {
-      return;
-    }
-    latestMessage.classList.add(LATEST_READ_CLASS);
-
-    if (!latestReceipt || !directProfile) {
+    if (!latestReceipt || !portraitHost || !directProfile) {
       return;
     }
 
@@ -2430,10 +3127,7 @@
 
     if (portrait.dataset.decReadProfile !== profileKey) {
       portrait.dataset.decReadProfile = profileKey;
-      portrait.style.setProperty(
-        "--dec-read-receipt-avatar",
-        avatarCss,
-      );
+      portrait.style.setProperty("--dec-read-receipt-avatar", avatarCss);
       portrait.setAttribute("role", "img");
       portrait.setAttribute("aria-label", `Lu par ${directProfile.name}`);
       portrait.title = `Lu par ${directProfile.name}`;
@@ -2812,6 +3506,7 @@
       enhanceMessage(message, profiles);
     });
     enhanceReadReceipts();
+    enhanceTypingIndicator(profiles);
     enhanceCustomEmojis();
     enhanceOriginalImagePreviews();
     initialMessageScan = false;
@@ -2831,13 +3526,75 @@
     });
   }
 
+  function mutationElement(node) {
+    if (node?.nodeType === Node.ELEMENT_NODE) {
+      return node;
+    }
+    return node?.parentElement || null;
+  }
+
+  function isInsideIgnoredUpdateArea(node) {
+    const element = mutationElement(node);
+    return Boolean(
+      element?.closest?.(
+        "#chat-form-controls, " +
+          `#${CONTROLS_ID}, ` +
+          `#${EMOJI_AUTOCOMPLETE_ID}, ` +
+          `#${CHAT_TOAST_STACK_ID}, ` +
+          CHAT_TOAST_SELECTOR,
+      ),
+    );
+  }
+
+  function isUserscriptOwnedNode(node) {
+    const element = mutationElement(node);
+    return Boolean(
+      element?.closest?.(
+        '[data-dec-created="true"], ' +
+          `.${AVATAR_CLASS}, ` +
+          `.${READ_AVATAR_CLASS}, ` +
+          `.${SENT_RECEIPT_COPY_CLASS}, ` +
+          `#${TYPING_INDICATOR_ID}`,
+      ),
+    );
+  }
+
+  function mutationNeedsUpdate(mutation) {
+    /* La saisie, l'autocomplétion et nos notifications possèdent leurs propres
+       gestionnaires. Les rescanner à chaque caractère était le principal coût
+       perceptible pendant l'écriture d'un message. */
+    if (isInsideIgnoredUpdateArea(mutation.target)) {
+      return false;
+    }
+
+    if (mutation.type !== "childList") {
+      return true;
+    }
+
+    const changedNodes = [
+      ...mutation.addedNodes,
+      ...mutation.removedNodes,
+    ];
+    return (
+      changedNodes.length === 0 ||
+      changedNodes.some(
+        (node) =>
+          !isInsideIgnoredUpdateArea(node) && !isUserscriptOwnedNode(node),
+      )
+    );
+  }
+
   applyPreferences();
   ensureControls();
   initializeCustomEmojis();
   initializeEmojiAutocomplete();
   initializeChatToastNotifications();
 
-  const observer = new MutationObserver(scheduleUpdate);
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.some(mutationNeedsUpdate)) {
+      scheduleUpdate();
+    }
+  });
   observer.observe(document.documentElement, {
     childList: true,
     characterData: true,
@@ -2857,6 +3614,12 @@
   });
 
   // Filet de sécurité pour le rendu virtuel d'Angular/3CX.
-  window.setInterval(scheduleUpdate, 2500);
+  window.setInterval(() => {
+    /* Les notifications et leur son ont un observateur dédié. En arrière-plan,
+       le rescan visuel peut attendre le retour sur l'onglet. */
+    if (!document.hidden) {
+      scheduleUpdate();
+    }
+  }, 2500);
   scheduleUpdate();
 })();
