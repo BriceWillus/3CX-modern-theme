@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.7.5
+// @version      1.8.0
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -38,10 +38,13 @@
   const STORAGE_EMOJI_MANIFEST = "decSlackEmojiManifest";
   const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
+  const STORAGE_NOTIFICATION_SOUND_ID = "decSlackNotificationSoundId";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
   const STORAGE_OWN_PROFILE = "decSlackOwnProfile";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
   const EMOJI_AUTOCOMPLETE_ID = "dec-slack-emoji-autocomplete";
+  const NOTIFICATION_SOUND_MENU_ID = "dec-slack-notification-sound-menu";
+  const SILENT_NOTIFICATION_SOUND_ID = "__silent__";
   const CUSTOM_EMOJI_REFRESH_MS = 5 * 60 * 1000;
   const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
 
@@ -69,6 +72,7 @@
   const initialChatToasts = new WeakSet();
   const enhancedChatToasts = new WeakSet();
   const customEmojis = new Map();
+  const customNotificationSounds = new Map();
   let initialMessageScan = true;
   let chatToastObserver = null;
   let chatToastStackInitialized = false;
@@ -77,7 +81,9 @@
   let suppressAnimationsUntil = performance.now() + 1200;
   let customEmojiRevision = 0;
   let customNotificationSound = null;
+  let defaultNotificationSoundId = "";
   let notificationAudio = null;
+  let notificationPreviewAudio = null;
   let notificationAudioObjectUrl = "";
   let notificationAudioLoadPromise = null;
   let notificationAudioLoadError = null;
@@ -169,6 +175,7 @@
       readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
     notificationSound:
       readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
+    notificationSoundId: readSetting(STORAGE_NOTIFICATION_SOUND_ID, ""),
   };
 
   function applyAccentVariables() {
@@ -257,18 +264,20 @@
       ? "Déplier la barre de recherche"
       : "Replier la barre de recherche";
 
-    soundButton.dataset.active = String(preferences.notificationSound);
-    soundButton.dataset.available = String(Boolean(customNotificationSound));
+    const soundEnabled = Boolean(customNotificationSound);
+    soundButton.dataset.active = String(soundEnabled);
+    soundButton.dataset.available = String(customNotificationSounds.size > 0);
+    soundButton.textContent = soundEnabled ? "🔔" : "🔕";
+    soundButton.title = soundEnabled
+      ? `Son de notification : ${customNotificationSound.label}`
+      : "Notifications personnalisées silencieuses";
     soundButton.setAttribute(
-      "aria-pressed",
-      String(preferences.notificationSound),
+      "aria-label",
+      soundEnabled
+        ? `Choisir le son de notification. Son actuel : ${customNotificationSound.label}`
+        : "Choisir le son de notification. Mode silencieux actif",
     );
-    soundButton.textContent = preferences.notificationSound ? "🔔" : "🔕";
-    soundButton.title = customNotificationSound
-      ? preferences.notificationSound
-        ? "Désactiver le son personnalisé"
-        : "Activer et tester le son personnalisé"
-      : "Aucun son personnalisé dans le manifeste";
+    renderNotificationSoundMenu();
 
     colorInput.value = preferences.accent;
     colorInput.title = `Couleur du thème : ${preferences.accent}`;
@@ -291,6 +300,88 @@
     root.classList.remove("dec-slack-chat-header-collapsed");
     applyAccentVariables();
     updateControls();
+  }
+
+  function notificationSoundMenu() {
+    return document.getElementById(NOTIFICATION_SOUND_MENU_ID);
+  }
+
+  function closeNotificationSoundMenu({ restoreFocus = false } = {}) {
+    const menu = notificationSoundMenu();
+    const button = document.querySelector(
+      `#${CONTROLS_ID} [data-dec-control='sound']`,
+    );
+    if (!menu || !button) {
+      return;
+    }
+
+    menu.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (restoreFocus) {
+      button.focus();
+    }
+  }
+
+  function renderNotificationSoundMenu() {
+    const menu = notificationSoundMenu();
+    if (!menu) {
+      return;
+    }
+
+    const selectedId = customNotificationSound
+      ? preferences.notificationSoundId
+      : SILENT_NOTIFICATION_SOUND_ID;
+    const options = [
+      {
+        id: SILENT_NOTIFICATION_SOUND_ID,
+        label: "Silencieux",
+        detail: "Aucun son de notification",
+      },
+      ...[...customNotificationSounds.values()].map((definition) => ({
+        id: definition.id,
+        label: definition.label,
+        detail: definition.filename || "Son personnalisé",
+      })),
+    ];
+    const menuSignature = JSON.stringify(
+      options.map(({ id, label, detail }) => [id, label, detail, id === selectedId]),
+    );
+    if (menu.dataset.decSoundMenuSignature === menuSignature) {
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+
+    options.forEach((option) => {
+      const selected = option.id === selectedId;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "dec-slack-sound-option";
+      button.dataset.soundId = option.id;
+      button.dataset.active = String(selected);
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(selected));
+
+      const check = document.createElement("span");
+      check.className = "dec-slack-sound-option-check";
+      check.setAttribute("aria-hidden", "true");
+      check.textContent = selected ? "✓" : "";
+
+      const label = document.createElement("span");
+      label.className = "dec-slack-sound-option-label";
+      label.textContent = option.label;
+
+      const detail = document.createElement("small");
+      detail.textContent = option.detail;
+      button.append(check, label, detail);
+      button.addEventListener("click", () => {
+        selectNotificationSound(option.id, { persist: true, preview: true });
+        closeNotificationSoundMenu({ restoreFocus: true });
+      });
+      fragment.appendChild(button);
+    });
+
+    menu.dataset.decSoundMenuSignature = menuSignature;
+    menu.replaceChildren(fragment);
   }
 
   function ensureControls() {
@@ -322,12 +413,23 @@
         data-dec-control="search"
         aria-label="Replier ou déplier la barre de recherche"
       ></button>
-      <button
-        type="button"
-        class="dec-slack-control-button"
-        data-dec-control="sound"
-        aria-label="Activer ou désactiver le son personnalisé"
-      ></button>
+      <div class="dec-slack-sound-picker">
+        <button
+          type="button"
+          class="dec-slack-control-button"
+          data-dec-control="sound"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          aria-controls="${NOTIFICATION_SOUND_MENU_ID}"
+        ></button>
+        <div
+          id="${NOTIFICATION_SOUND_MENU_ID}"
+          class="dec-slack-sound-menu"
+          role="listbox"
+          aria-label="Sons de notification"
+          hidden
+        ></div>
+      </div>
       <label
         class="dec-slack-control-button dec-slack-color-control"
         title="Changer la couleur du thème"
@@ -372,22 +474,55 @@
     });
 
     soundButton.addEventListener("click", () => {
-      if (!customNotificationSound) {
+      const menu = notificationSoundMenu();
+      if (!menu) {
         return;
       }
+      const opening = menu.hidden;
+      menu.hidden = !opening;
+      soundButton.setAttribute("aria-expanded", String(opening));
+      if (opening) {
+        renderNotificationSoundMenu();
+        menu
+          .querySelector('.dec-slack-sound-option[data-active="true"]')
+          ?.focus();
+      }
+    });
 
-      preferences.notificationSound = !preferences.notificationSound;
-      writeSetting(
-        STORAGE_NOTIFICATION_SOUND,
-        String(preferences.notificationSound),
-      );
-      updateControls();
+    notificationSoundMenu()?.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        return;
+      }
+      const options = [
+        ...notificationSoundMenu().querySelectorAll(
+          ".dec-slack-sound-option",
+        ),
+      ];
+      if (options.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const currentIndex = options.indexOf(document.activeElement);
+      const nextIndex =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? options.length - 1
+            : event.key === "ArrowDown"
+              ? (currentIndex + 1 + options.length) % options.length
+              : (currentIndex - 1 + options.length) % options.length;
+      options[nextIndex].focus();
+    });
 
-      if (preferences.notificationSound) {
-        playCustomNotification({ preview: true });
-      } else if (notificationAudio) {
-        notificationAudio.pause();
-        notificationAudio.currentTime = 0;
+    document.addEventListener("pointerdown", (event) => {
+      if (!controls.contains(event.target)) {
+        closeNotificationSoundMenu();
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !notificationSoundMenu()?.hidden) {
+        event.preventDefault();
+        closeNotificationSoundMenu({ restoreFocus: true });
       }
     });
 
@@ -589,14 +724,18 @@
     });
   }
 
-  function notificationSoundDefinitionFrom(source, baseUrl) {
-    if (!source || typeof source !== "object" || Array.isArray(source)) {
-      return null;
-    }
+  function normalizeNotificationSoundId(value) {
+    const id = String(value || "")
+      .trim()
+      .toLocaleLowerCase("fr-FR")
+      .replace(/\s+/g, "_");
+    return /^[a-z0-9][a-z0-9_+-]{0,63}$/.test(id) ? id : "";
+  }
 
-    const entry = source.notificationSound;
+  function notificationSoundDefinition(idValue, entry, baseUrl) {
+    const id = normalizeNotificationSoundId(idValue);
     const rawUrl = typeof entry === "string" ? entry : entry?.url;
-    if (!rawUrl) {
+    if (!id || !rawUrl) {
       return null;
     }
 
@@ -617,10 +756,67 @@
       const volume = Number.isFinite(rawVolume)
         ? Math.min(1, Math.max(0, rawVolume))
         : 0.7;
-      return { url: url.href, volume };
+      const pathname = decodeURIComponent(url.pathname || "");
+      const filename = pathname.split("/").filter(Boolean).at(-1) || "";
+      const label =
+        typeof entry === "object" && entry
+          ? String(entry.label || entry.title || "").trim()
+          : "";
+      return {
+        id,
+        url: url.href,
+        volume,
+        filename,
+        label: label || filename.replace(/\.[^.]+$/, "") || id,
+      };
     } catch {
       return null;
     }
+  }
+
+  function notificationSoundDefinitionsFrom(source, baseUrl) {
+    const definitions = new Map();
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      return { definitions, defaultId: "" };
+    }
+
+    const entries =
+      source.notificationSounds &&
+      typeof source.notificationSounds === "object" &&
+      !Array.isArray(source.notificationSounds)
+        ? source.notificationSounds
+        : {};
+    Object.entries(entries).forEach(([id, entry]) => {
+      const definition = notificationSoundDefinition(id, entry, baseUrl);
+      if (definition) {
+        definitions.set(definition.id, definition);
+      }
+    });
+
+    /* Compatibilité avec les manifestes et les anciennes versions du script,
+       qui ne connaissaient qu'un unique champ notificationSound. */
+    const legacyDefinition = notificationSoundDefinition(
+      "default",
+      source.notificationSound,
+      baseUrl,
+    );
+    if (definitions.size === 0 && legacyDefinition) {
+      definitions.set(legacyDefinition.id, legacyDefinition);
+    }
+
+    let defaultId = normalizeNotificationSoundId(
+      source.defaultNotificationSound,
+    );
+    if (!definitions.has(defaultId) && legacyDefinition) {
+      defaultId =
+        [...definitions.values()].find(
+          (definition) => definition.url === legacyDefinition.url,
+        )?.id || "";
+    }
+    if (!definitions.has(defaultId)) {
+      defaultId = definitions.keys().next().value || "";
+    }
+    return { definitions, defaultId };
   }
 
   function notificationSoundDefinitionsAreEqual(first, second) {
@@ -631,6 +827,21 @@
         first.url === second.url &&
         first.volume === second.volume)
     );
+  }
+
+  function notificationSoundMapsAreEqual(first, second) {
+    if (first.size !== second.size) {
+      return false;
+    }
+    return [...first].every(([id, definition]) => {
+      const other = second.get(id);
+      return (
+        other &&
+        notificationSoundDefinitionsAreEqual(definition, other) &&
+        definition.label === other.label &&
+        definition.filename === other.filename
+      );
+    });
   }
 
   function audioMimeType(url, responseHeaders = "") {
@@ -793,7 +1004,9 @@
 
   function clearNotificationAudio() {
     notificationAudio?.pause();
+    notificationPreviewAudio?.pause();
     notificationAudio = null;
+    notificationPreviewAudio = null;
     notificationAudioLoadPromise = null;
     notificationAudioLoadError = null;
     notificationAudioBuffer = null;
@@ -802,6 +1015,107 @@
     if (notificationAudioObjectUrl) {
       URL.revokeObjectURL(notificationAudioObjectUrl);
       notificationAudioObjectUrl = "";
+    }
+  }
+
+  function previewNotificationSound(definition) {
+    notificationPreviewAudio?.pause();
+    try {
+      const previewAudio = new Audio(definition.url);
+      notificationPreviewAudio = previewAudio;
+      previewAudio.preload = "auto";
+      previewAudio.volume = definition.volume;
+      const playback = previewAudio.play();
+      if (playback && typeof playback.catch === "function") {
+        playback.catch((error) => {
+          console.warn(
+            "[3CX Slack] Le navigateur n'a pas pu lire la préécoute du son.",
+            error,
+          );
+        });
+      }
+      previewAudio.addEventListener(
+        "ended",
+        () => {
+          if (notificationPreviewAudio === previewAudio) {
+            notificationPreviewAudio = null;
+          }
+        },
+        { once: true },
+      );
+    } catch (error) {
+      console.warn(
+        "[3CX Slack] Impossible de préparer la préécoute du son.",
+        error,
+      );
+    }
+  }
+
+  function resolvedNotificationSoundId(requestedId) {
+    if (requestedId === SILENT_NOTIFICATION_SOUND_ID) {
+      return SILENT_NOTIFICATION_SOUND_ID;
+    }
+    const normalizedId = normalizeNotificationSoundId(requestedId);
+    if (customNotificationSounds.has(normalizedId)) {
+      return normalizedId;
+    }
+    if (!requestedId && !preferences.notificationSound) {
+      return SILENT_NOTIFICATION_SOUND_ID;
+    }
+    return (
+      (customNotificationSounds.has(defaultNotificationSoundId)
+        ? defaultNotificationSoundId
+        : customNotificationSounds.keys().next().value) ||
+      SILENT_NOTIFICATION_SOUND_ID
+    );
+  }
+
+  function selectNotificationSound(
+    requestedId,
+    { persist = false, preview = false } = {},
+  ) {
+    const selectedId = resolvedNotificationSoundId(requestedId);
+    const selectedSound =
+      selectedId === SILENT_NOTIFICATION_SOUND_ID
+        ? null
+        : customNotificationSounds.get(selectedId) || null;
+    const soundChanged = !notificationSoundDefinitionsAreEqual(
+      customNotificationSound,
+      selectedSound,
+    );
+
+    if (soundChanged) {
+      clearNotificationAudio();
+    }
+    customNotificationSound = selectedSound;
+    preferences.notificationSoundId = selectedSound
+      ? selectedSound.id
+      : SILENT_NOTIFICATION_SOUND_ID;
+    preferences.notificationSound = Boolean(selectedSound);
+
+    if (persist) {
+      writeSetting(
+        STORAGE_NOTIFICATION_SOUND_ID,
+        preferences.notificationSoundId,
+      );
+      /* Conservé pour qu'un retour temporaire à une ancienne version du script
+         respecte encore le choix silencieux/actif. */
+      writeSetting(
+        STORAGE_NOTIFICATION_SOUND,
+        String(preferences.notificationSound),
+      );
+    }
+
+    updateControls();
+    if (selectedSound) {
+      if (preview) {
+        /* Lecture directe pendant le geste utilisateur : plus fiable pour la
+           préécoute Firefox, pendant que la version mise en cache se prépare. */
+        previewNotificationSound(selectedSound);
+        void prepareNotificationAudio();
+      } else if (soundChanged) {
+        void prepareNotificationAudio();
+      }
     }
   }
 
@@ -1000,7 +1314,7 @@
       manifest,
       effectiveManifestUrl,
     );
-    const nextNotificationSound = notificationSoundDefinitionFrom(
+    const nextNotificationSoundCatalog = notificationSoundDefinitionsFrom(
       manifest,
       effectiveManifestUrl,
     );
@@ -1013,12 +1327,14 @@
       customEmojis,
       nextDefinitions,
     );
-    const soundChanged = !notificationSoundDefinitionsAreEqual(
-      customNotificationSound,
-      nextNotificationSound,
-    );
+    const soundCatalogChanged =
+      defaultNotificationSoundId !== nextNotificationSoundCatalog.defaultId ||
+      !notificationSoundMapsAreEqual(
+        customNotificationSounds,
+        nextNotificationSoundCatalog.definitions,
+      );
 
-    if (!emojisChanged && !soundChanged) {
+    if (!emojisChanged && !soundCatalogChanged) {
       return;
     }
 
@@ -1032,13 +1348,19 @@
       scheduleUpdate();
     }
 
-    if (soundChanged) {
-      clearNotificationAudio();
-      customNotificationSound = nextNotificationSound;
-      if (preferences.notificationSound) {
-        void prepareNotificationAudio();
-      }
-      updateControls();
+    if (soundCatalogChanged) {
+      const requestedId = preferences.notificationSoundId;
+      customNotificationSounds.clear();
+      nextNotificationSoundCatalog.definitions.forEach((definition, id) => {
+        customNotificationSounds.set(id, definition);
+      });
+      defaultNotificationSoundId = nextNotificationSoundCatalog.defaultId;
+      selectNotificationSound(requestedId, {
+        /* Cette écriture effectue aussi la migration de l'ancien booléen vers
+           l'identifiant précis du son, sans lancer de préécoute au chargement. */
+        persist: customNotificationSounds.size > 0 || Boolean(requestedId),
+        preview: false,
+      });
     }
   }
 
