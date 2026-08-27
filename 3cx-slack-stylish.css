@@ -2885,9 +2885,9 @@ chat-messages-header .avatar-container > *,
    V19 — ACCUSÉ DE LECTURE UNIQUE ET PORTRAIT DU CONTACT
    ========================================================== */
 
-/* Si un message plus récent est lu, les accusés de tous les messages qui le
-   précèdent deviennent redondants. Le userscript marque seulement le dernier. */
-chat-message:not(.dec-slack-latest-read) delivered-check {
+/* Seuls les anciens doubles checks « lus » sont redondants. Les checks simples
+   « envoyés » restent visibles jusqu'à leur passage à l'état lu. */
+delivered-check.dec-slack-redundant-read {
   display: none !important;
 }
 
@@ -2902,6 +2902,48 @@ chat-message.dec-slack-latest-read {
 chat-message.dec-slack-latest-read
   delivered-check.dec-slack-native-read-hidden {
   display: none !important;
+}
+
+delivered-check.dec-slack-native-sent-hidden {
+  display: none !important;
+}
+
+chat-message:has(> delivered-check.dec-slack-sent-receipt-copy),
+chat-message .message-outter-wrapper:has(> delivered-check.dec-slack-sent-receipt-copy) {
+  position: relative !important;
+  width: 100% !important;
+  overflow: visible !important;
+}
+
+/* Copie visuelle du check simple natif, déplacée hors de la bulle afin que son
+   bord droit soit le même que celui du portrait « lu ». */
+chat-message
+  > delivered-check.dec-slack-sent-receipt-copy[data-dec-created="true"],
+chat-message
+  .message-outter-wrapper
+  > delivered-check.dec-slack-sent-receipt-copy[data-dec-created="true"] {
+  position: absolute !important;
+  z-index: 8 !important;
+  top: auto !important;
+  right: 10px !important;
+  bottom: 3px !important;
+  left: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: 20px !important;
+  min-width: 20px !important;
+  height: 14px !important;
+  min-height: 14px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--slack-muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  line-height: 14px !important;
+  pointer-events: none !important;
 }
 
 chat-message.dec-slack-latest-read
@@ -2943,4 +2985,116 @@ chat-message.dec-slack-latest-read
   font-size: 0 !important;
   line-height: 0 !important;
   pointer-events: none !important;
+}
+
+/* ==========================================================
+   V20 — INDICATEUR D'ÉCRITURE AVEC AVATARS
+   ========================================================== */
+
+/* La ligne textuelle native de 3CX est remplacée par le rendu placé sous le
+   fil de discussion. Le userscript ne marque que son nœud le plus précis. */
+.dec-slack-native-typing-hidden {
+  display: none !important;
+}
+
+#dec-slack-typing-indicator {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 30px !important;
+  margin: 2px 0 6px !important;
+  padding: 4px 14px 6px 16px !important;
+  overflow: visible !important;
+  color: var(--slack-muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+#dec-slack-typing-indicator[hidden] {
+  display: none !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-avatars {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-avatar {
+  display: grid !important;
+  flex: 0 0 20px !important;
+  place-items: center !important;
+  box-sizing: border-box !important;
+  width: 20px !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  color: #fff !important;
+  background-color: #58666e !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  border: 1px solid var(--slack-line) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18) !important;
+  font-size: 8px !important;
+  font-weight: 750 !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-dots {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 3px !important;
+  margin-left: 7px !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-dots > i {
+  display: block !important;
+  width: 5px !important;
+  height: 5px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0.2;
+  background: var(--slack-muted) !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  animation: dec-slack-typing-dot 1.15s ease-in-out infinite !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-dots > i:nth-child(2) {
+  animation-delay: 0.16s !important;
+}
+
+#dec-slack-typing-indicator .dec-slack-typing-dots > i:nth-child(3) {
+  animation-delay: 0.32s !important;
+}
+
+@keyframes dec-slack-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 0.95;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #dec-slack-typing-indicator .dec-slack-typing-dots > i {
+    opacity: 0.7 !important;
+    animation: none !important;
+  }
 }
