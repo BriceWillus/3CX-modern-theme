@@ -2513,7 +2513,7 @@ chat-messages-header.dec-slack-conversation-header
 chat-toast-component.dec-slack-chat-toast {
   position: fixed !important;
   z-index: 2147483200 !important;
-  top: 16px !important;
+  top: var(--dec-slack-chat-toast-top, 16px) !important;
   right: 18px !important;
   bottom: auto !important;
   left: auto !important;
@@ -2626,40 +2626,16 @@ html.dec-slack-theme-light
    V13 — PILE DE NOTIFICATIONS ET EN-TÊTE SANS SÉPARATEURS
    ========================================================== */
 
-/* La pile est placée sous le bandeau supérieur par le userscript. Les
-   notifications restent dans le flux de cette pile et ne se recouvrent plus. */
+/* Compatibilité avec les anciennes versions : la pile qui déplaçait les
+   composants Angular est neutralisée. Le userscript empile maintenant les
+   notifications en position fixe sans modifier leur parent natif. */
 #dec-slack-chat-toast-stack {
-  position: fixed !important;
-  z-index: 2147483200 !important;
-  right: 18px !important;
-  bottom: 12px !important;
-  left: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: flex-end !important;
-  justify-content: flex-start !important;
-  gap: 12px !important;
-  box-sizing: border-box !important;
-  width: min(360px, calc(100vw - 36px)) !important;
-  margin: 0 !important;
-  padding: 0 10px 0 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  pointer-events: none !important;
+  display: none !important;
 }
 
 #dec-slack-chat-toast-stack
   > chat-toast-component.dec-slack-chat-toast {
-  position: relative !important;
-  z-index: auto !important;
-  inset: auto !important;
-  top: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  flex: 0 0 auto !important;
-  width: 100% !important;
-  pointer-events: auto !important;
+  display: none !important;
 }
 
 /* Neutralise toutes les couches opaques et les séparateurs natifs de
@@ -3131,15 +3107,32 @@ chat-message.dec-slack-latest-read
 }
 
 #dec-slack-typing-indicator .dec-slack-typing-avatars {
-  display: flex !important;
+  position: static !important;
+  inset: auto !important;
+  display: inline-flex !important;
   flex: 0 0 auto !important;
+  flex-flow: row nowrap !important;
   align-items: center !important;
-  gap: 3px !important;
+  justify-content: flex-start !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  height: 20px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 4px !important;
+  transform: none !important;
 }
 
 #dec-slack-typing-indicator .dec-slack-typing-avatar {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
   display: grid !important;
   flex: 0 0 20px !important;
+  float: none !important;
   place-items: center !important;
   box-sizing: border-box !important;
   width: 20px !important;
@@ -3161,6 +3154,7 @@ chat-message.dec-slack-latest-read
   font-weight: 750 !important;
   line-height: 1 !important;
   text-transform: uppercase !important;
+  transform: none !important;
   pointer-events: none !important;
   user-select: none !important;
 }
