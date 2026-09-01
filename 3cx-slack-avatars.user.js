@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.8.0
+// @version      1.8.6
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -76,6 +76,7 @@
   let initialMessageScan = true;
   let chatToastObserver = null;
   let chatToastStackInitialized = false;
+  let chatToastPositionScheduled = false;
   let emojiAutocompleteState = null;
   let emojiAutocompleteInitialized = false;
   let suppressAnimationsUntil = performance.now() + 1200;
@@ -83,7 +84,6 @@
   let customNotificationSound = null;
   let defaultNotificationSoundId = "";
   let notificationAudio = null;
-  let notificationPreviewAudio = null;
   let notificationAudioObjectUrl = "";
   let notificationAudioLoadPromise = null;
   let notificationAudioLoadError = null;
@@ -1004,9 +1004,7 @@
 
   function clearNotificationAudio() {
     notificationAudio?.pause();
-    notificationPreviewAudio?.pause();
     notificationAudio = null;
-    notificationPreviewAudio = null;
     notificationAudioLoadPromise = null;
     notificationAudioLoadError = null;
     notificationAudioBuffer = null;
@@ -1015,39 +1013,6 @@
     if (notificationAudioObjectUrl) {
       URL.revokeObjectURL(notificationAudioObjectUrl);
       notificationAudioObjectUrl = "";
-    }
-  }
-
-  function previewNotificationSound(definition) {
-    notificationPreviewAudio?.pause();
-    try {
-      const previewAudio = new Audio(definition.url);
-      notificationPreviewAudio = previewAudio;
-      previewAudio.preload = "auto";
-      previewAudio.volume = definition.volume;
-      const playback = previewAudio.play();
-      if (playback && typeof playback.catch === "function") {
-        playback.catch((error) => {
-          console.warn(
-            "[3CX Slack] Le navigateur n'a pas pu lire la préécoute du son.",
-            error,
-          );
-        });
-      }
-      previewAudio.addEventListener(
-        "ended",
-        () => {
-          if (notificationPreviewAudio === previewAudio) {
-            notificationPreviewAudio = null;
-          }
-        },
-        { once: true },
-      );
-    } catch (error) {
-      console.warn(
-        "[3CX Slack] Impossible de préparer la préécoute du son.",
-        error,
-      );
     }
   }
 
@@ -1109,10 +1074,9 @@
     updateControls();
     if (selectedSound) {
       if (preview) {
-        /* Lecture directe pendant le geste utilisateur : plus fiable pour la
-           préécoute Firefox, pendant que la version mise en cache se prépare. */
-        previewNotificationSound(selectedSound);
-        void prepareNotificationAudio();
+        /* La préécoute suit le même chemin GM/Blob/AudioContext que les vraies
+           notifications : cela évite le blocage de l'URL GitHub en lecture directe. */
+        playCustomNotification({ preview: true });
       } else if (soundChanged) {
         void prepareNotificationAudio();
       }
@@ -2298,65 +2262,6 @@
     );
   }
 
-  function conversationPresenceFromHeader(header, ignoredTitle) {
-    const statusPattern =
-      /\b(Non enregistré|Voyage d'affaires|Disponible|Absent|Ne pas déranger|Occupé|En réunion|Déjeuner|En déplacement|Hors ligne|Unregistered|Business trip|Available|Away|Do not disturb|Busy|Offline)\b/i;
-    const candidates = [];
-
-    header
-      .querySelectorAll(
-        "[class*='status'], [class*='presence'], [data-status], " +
-          "[title], [aria-label], small, .text-muted",
-      )
-      .forEach((element) => {
-        if (
-          ignoredTitle.contains(element) ||
-          element.closest(".dec-slack-conversation-actions") ||
-          element.closest(".dec-slack-conversation-title-card")
-        ) {
-          return;
-        }
-        candidates.push(
-          element.textContent,
-          element.getAttribute("title"),
-          element.getAttribute("aria-label"),
-          element.getAttribute("data-status"),
-        );
-      });
-    candidates.push(header.textContent);
-
-    for (const candidate of candidates) {
-      const match = String(candidate || "").match(statusPattern);
-      if (match) {
-        return match[1];
-      }
-    }
-    return "";
-  }
-
-  function conversationPresenceKind(status) {
-    const normalized = String(status || "").toLocaleLowerCase("fr-FR");
-    if (/non enregistré|unregistered/.test(normalized)) {
-      return "unregistered";
-    }
-    if (/voyage d'affaires|business trip/.test(normalized)) {
-      return "business-trip";
-    }
-    if (/déjeuner/.test(normalized)) {
-      return "lunch";
-    }
-    if (/disponible|available/.test(normalized)) {
-      return "available";
-    }
-    if (/absent|away|déplacement/.test(normalized)) {
-      return "away";
-    }
-    if (/ne pas déranger|occupé|réunion|do not disturb|busy/.test(normalized)) {
-      return "busy";
-    }
-    return "offline";
-  }
-
   function visibleCssColor(value) {
     const color = String(value || "").trim();
     if (
@@ -2376,90 +2281,260 @@
     return color;
   }
 
+  function cssColorMetrics(value) {
+    const color = String(value || "").trim();
+    let channels = null;
+    const rgbMatch = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+    const hexMatch = color.match(/^#([0-9a-f]{6})$/i);
+    if (rgbMatch) {
+      channels = rgbMatch.slice(1, 4).map(Number);
+    } else if (hexMatch) {
+      channels = [0, 2, 4].map((offset) =>
+        Number.parseInt(hexMatch[1].slice(offset, offset + 2), 16),
+      );
+    }
+    if (!channels) {
+      return { saturation: 0, luminance: 0.5 };
+    }
+    const [red, green, blue] = channels.map((channel) => channel / 255);
+    const maximum = Math.max(red, green, blue);
+    const minimum = Math.min(red, green, blue);
+    return {
+      saturation: maximum === 0 ? 0 : (maximum - minimum) / maximum,
+      luminance: 0.2126 * red + 0.7152 * green + 0.0722 * blue,
+    };
+  }
+
   function nativePresenceColor(element) {
     if (!element) {
       return "";
     }
-    if (element.dataset.decPresenceColor) {
+    const nodes = [element, ...element.querySelectorAll("*")];
+    const nativeNodeState = (node) => {
+      const classes = String(node.className?.baseVal || node.className || "")
+        .split(/\s+/)
+        .filter((className) => !className.startsWith("dec-slack-"))
+        .sort()
+        .join(".");
+      const attributes = [...node.attributes]
+        .filter(
+          (attribute) =>
+            attribute.name !== "class" &&
+            !attribute.name.startsWith("data-dec-"),
+        )
+        .map((attribute) => `${attribute.name}=${attribute.value}`)
+        .sort()
+        .join(";");
+      return `${node.tagName}:${classes}:${attributes}`;
+    };
+    const signature = [
+      nativeNodeState(element.parentElement || element),
+      ...nodes.map(nativeNodeState),
+      String(element.textContent || "").trim(),
+    ].join("|");
+    if (
+      element.dataset.decPresenceColor &&
+      element.dataset.decPresenceSignature === signature
+    ) {
       return element.dataset.decPresenceColor;
     }
 
-    const nodes = [element, ...element.querySelectorAll("*")];
-    for (const node of nodes) {
-      const rect = node.getBoundingClientRect();
-      const compactNode =
-        rect.width > 0 && rect.height > 0 && rect.width <= 24 && rect.height <= 24;
-      for (const pseudo of [null, "::before", "::after"]) {
-        const style = window.getComputedStyle(node, pseudo);
-        const pseudoWidth = Number.parseFloat(style.width);
-        const pseudoHeight = Number.parseFloat(style.height);
-        const compactPseudo =
-          pseudo &&
-          pseudoWidth > 0 &&
-          pseudoHeight > 0 &&
-          pseudoWidth <= 24 &&
-          pseudoHeight <= 24;
-        if (!compactNode && !compactPseudo) {
-          continue;
-        }
-        const candidates = [style.backgroundColor];
-        if (Number.parseFloat(style.borderTopWidth) > 0) {
-          candidates.push(style.borderTopColor);
-        }
-        if (node.namespaceURI === "http://www.w3.org/2000/svg") {
-          candidates.push(style.fill, style.stroke, style.color);
-        } else if (compactNode || (pseudo && style.content !== "none")) {
-          candidates.push(style.color);
-        }
-        for (const candidate of candidates) {
-          const color = visibleCssColor(candidate);
-          if (color) {
-            element.dataset.decPresenceColor = color;
-            return color;
+    const wasHidden = element.classList.contains(
+      "dec-slack-native-presence-hidden",
+    );
+    if (wasHidden) {
+      element.classList.remove("dec-slack-native-presence-hidden");
+    }
+    const colorCandidates = [];
+    try {
+      for (const node of nodes) {
+        const rect = node.getBoundingClientRect();
+        const compactNode =
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.width <= 24 &&
+          rect.height <= 24;
+        for (const pseudo of [null, "::before", "::after"]) {
+          const style = window.getComputedStyle(node, pseudo);
+          const pseudoWidth = Number.parseFloat(style.width);
+          const pseudoHeight = Number.parseFloat(style.height);
+          const compactPseudo =
+            pseudo &&
+            pseudoWidth > 0 &&
+            pseudoHeight > 0 &&
+            pseudoWidth <= 24 &&
+            pseudoHeight <= 24;
+          if (!compactNode && !compactPseudo) {
+            continue;
+          }
+          const candidates = [
+            { value: style.backgroundColor, weight: 120 },
+          ];
+          if (Number.parseFloat(style.borderTopWidth) > 0) {
+            candidates.push({ value: style.borderTopColor, weight: 35 });
+          }
+          if (node.namespaceURI === "http://www.w3.org/2000/svg") {
+            candidates.push(
+              { value: style.fill, weight: 120 },
+              { value: style.stroke, weight: 75 },
+              { value: style.color, weight: 25 },
+            );
+          } else if (compactNode || (pseudo && style.content !== "none")) {
+            candidates.push({ value: style.color, weight: 20 });
+          }
+          const semanticMarker = /(?:presence|status|availability|indicator|dot)/i.test(
+            [
+              node.className?.baseVal || node.className,
+              node.getAttribute?.("data-qa"),
+              node.getAttribute?.("data-status"),
+              node.getAttribute?.("data-presence"),
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+          const circularMarker =
+            /50%/.test(style.borderRadius) ||
+            Number.parseFloat(style.borderRadius) >=
+              Math.min(pseudoWidth || rect.width, pseudoHeight || rect.height) / 2;
+          for (const candidate of candidates) {
+            const color = visibleCssColor(candidate.value);
+            if (color) {
+              const metrics = cssColorMetrics(color);
+              const extremeNeutral =
+                metrics.saturation < 0.08 &&
+                (metrics.luminance < 0.08 || metrics.luminance > 0.92);
+              colorCandidates.push({
+                color,
+                score:
+                  candidate.weight +
+                  (semanticMarker ? 170 : 0) +
+                  (circularMarker ? 55 : 0) +
+                  (Math.max(pseudoWidth || rect.width, pseudoHeight || rect.height) <= 16
+                    ? 30
+                    : 0) +
+                  metrics.saturation * 110 -
+                  (extremeNeutral ? 140 : 0),
+              });
+            }
           }
         }
       }
+    } finally {
+      if (wasHidden) {
+        element.classList.add("dec-slack-native-presence-hidden");
+      }
     }
-    return "";
+    const bestColor = colorCandidates.sort(
+      (left, right) => right.score - left.score,
+    )[0]?.color || "";
+    if (bestColor) {
+      element.dataset.decPresenceColor = bestColor;
+      element.dataset.decPresenceSignature = signature;
+    }
+    return bestColor;
   }
 
-  function hideNativeConversationPresence(header, ignoredTitle, presence) {
-    if (!presence) {
-      return "";
-    }
+  function nativeConversationPresenceFromHeader(
+    header,
+    ignoredTitle,
+    visibleTitle,
+  ) {
+    const nativeSemanticSelector =
+      "[class*='status' i], [class*='presence' i], [data-status], " +
+      "[data-presence], [data-qa*='status' i], [data-qa*='presence' i]";
+    const candidateSelector = `${nativeSemanticSelector}, small, .text-muted`;
+    const ignoredLabels = new Set(
+      [visibleTitle, ignoredTitle.textContent]
+        .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean),
+    );
+    const candidates = [];
 
-    const exactStatusPattern =
-      /^(Non enregistré|Voyage d'affaires|Disponible|Absent|Ne pas déranger|Occupé|En réunion|Déjeuner|En déplacement|Hors ligne|Unregistered|Business trip|Available|Away|Do not disturb|Busy|Offline)$/i;
-    const statusContainerSelector =
-      "[class*='status'], [class*='presence'], [data-status], small, .text-muted";
-    let color = "";
-
-    [...header.querySelectorAll("*")].forEach((element) => {
+    [...header.querySelectorAll(candidateSelector)].forEach((element) => {
       if (
         element === ignoredTitle ||
         ignoredTitle.contains(element) ||
         element.closest(".dec-slack-conversation-actions") ||
-        element.closest(".dec-slack-conversation-title-card")
+        element.closest(".dec-slack-conversation-title-card") ||
+        element.closest("button, a, [role='button']")
       ) {
         return;
       }
 
-      const text = String(element.textContent || "")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (!exactStatusPattern.test(text)) {
+      const rawLabels = [
+        element.textContent,
+        element.getAttribute("title"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("data-status-text"),
+        element.getAttribute("data-presence-text"),
+        element.getAttribute("data-label"),
+      ];
+      const label = rawLabels
+        .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+        .find(
+          (value) =>
+            value &&
+            value.length <= 100 &&
+            !ignoredLabels.has(value) &&
+            !/^\d{1,5}$/.test(value) &&
+            !/@/.test(value) &&
+            !/^(?:appel|email|participants? au chat)/i.test(value),
+        );
+      const parent = element.parentElement;
+      const parentCanContainDot =
+        parent &&
+        parent !== header &&
+        !parent.querySelector("button, a, [role='button']");
+      const color =
+        nativePresenceColor(element) ||
+        (parentCanContainDot ? nativePresenceColor(parent) : "");
+      if (!label && !color) {
         return;
       }
 
-      const semanticContainer = element.closest(statusContainerSelector);
-      const target =
-        semanticContainer && header.contains(semanticContainer)
-          ? semanticContainer
-          : element;
-      color ||= nativePresenceColor(target);
-      target.classList.add("dec-slack-native-presence-hidden");
+      candidates.push({
+        label: label || "",
+        color,
+        source: element,
+        score:
+          (label ? 50 : 0) +
+          (color ? 100 : 0) +
+          (element.matches(nativeSemanticSelector) ? 24 : 0) +
+          (element.hasAttribute("data-status") ? 12 : 0) +
+          (element.hasAttribute("data-presence") ? 12 : 0),
+      });
     });
-    return color;
+
+    const best = candidates
+      .filter((candidate) => candidate.label)
+      .sort((left, right) => right.score - left.score)[0];
+    if (!best) {
+      return { label: "", color: "" };
+    }
+
+    let relatedColorCandidate = null;
+    if (!best.color) {
+      relatedColorCandidate =
+        candidates.find(
+          (candidate) =>
+            candidate.color &&
+            (candidate.source.contains(best.source) ||
+              best.source.contains(candidate.source) ||
+              candidate.source.parentElement === best.source.parentElement),
+        ) || null;
+      best.color = relatedColorCandidate?.color || "";
+    }
+    let sourceToHide = best.source;
+    if (
+      relatedColorCandidate &&
+      best.source.parentElement === relatedColorCandidate.source.parentElement &&
+      best.source.parentElement !== header &&
+      !best.source.parentElement.querySelector("button, a, [role='button']")
+    ) {
+      sourceToHide = best.source.parentElement;
+    }
+    sourceToHide.classList.add("dec-slack-native-presence-hidden");
+    return { label: best.label, color: best.color };
   }
 
   function enhanceConversationHeader() {
@@ -2480,12 +2555,16 @@
     const profile = directConversationProfileFromHeader();
     const rawTitle = String(title.textContent || "").trim();
     const visibleTitle = profile?.name || rawTitle;
-    const presence = profile
-      ? conversationPresenceFromHeader(header, title)
+    const nativePresence = profile
+      ? nativeConversationPresenceFromHeader(header, title, visibleTitle)
+      : { label: "", color: "" };
+    const presence = nativePresence.label;
+    /* La liste des conversations conserve toujours la pastille native complète,
+       même lorsque 3CX sépare le libellé personnalisé dans l'en-tête. */
+    const conversationListPresenceColor = profile
+      ? nativePresenceColor(activeConversationChatItem())
       : "";
-    const presenceColor = profile
-      ? hideNativeConversationPresence(header, title, presence)
-      : "";
+    const presenceColor = conversationListPresenceColor || nativePresence.color;
     if (!profile) {
       header
         .querySelectorAll(".dec-slack-native-presence-hidden")
@@ -2529,7 +2608,7 @@
       ".dec-slack-conversation-presence-dot",
     );
     statusLine.hidden = !presence;
-    statusLine.dataset.status = conversationPresenceKind(presence);
+    delete statusLine.dataset.status;
     statusText.textContent = presence;
     if (presenceColor) {
       statusDot.style.setProperty("background-color", presenceColor, "important");
@@ -2902,6 +2981,64 @@
     return indicator;
   }
 
+  function messageScrollContainer(message) {
+    let element = message?.parentElement || null;
+    while (element && element !== document.body) {
+      const style = window.getComputedStyle(element);
+      const canScrollVertically = /^(auto|scroll|overlay)$/.test(
+        style.overflowY,
+      );
+      if (
+        canScrollVertically &&
+        element.scrollHeight > element.clientHeight + 1
+      ) {
+        return element;
+      }
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function refreshNativeReadTracking(referenceMessage) {
+    if (document.hidden || !referenceMessage) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const scroller = messageScrollContainer(referenceMessage);
+      if (!scroller) {
+        return;
+      }
+
+      /* 3CX marque le fil comme lu au passage du vrai dernier message dans la
+         zone visible. On ne force ce recalcul que si l'utilisateur est deja
+         au bas du fil, afin de ne jamais le deplacer pendant une relecture. */
+      const distanceFromBottom =
+        scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+      if (distanceFromBottom > 80) {
+        return;
+      }
+
+      scroller.scrollTop = scroller.scrollHeight;
+      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+  }
+
+  function removeTypingIndicator() {
+    const indicator = document.getElementById(TYPING_INDICATOR_ID);
+    if (!indicator) {
+      return false;
+    }
+
+    const referenceMessage =
+      indicator.previousElementSibling?.matches?.(MESSAGE_SELECTOR)
+        ? indicator.previousElementSibling
+        : [...document.querySelectorAll(MESSAGE_SELECTOR)].at(-1) || null;
+    indicator.remove();
+    refreshNativeReadTracking(referenceMessage);
+    return true;
+  }
+
   function enhanceTypingIndicator(profiles) {
     const elements = nativeTypingElements();
     const activeElements = new Set(elements);
@@ -2913,17 +3050,17 @@
         }
       });
 
-    const indicator = ensureTypingIndicator();
-    if (!indicator) {
+    const typingProfiles = profilesFromTypingElements(elements, profiles);
+    if (elements.length === 0 || typingProfiles.length === 0) {
+      /* Même cache, ce nœud restait le dernier enfant de la liste. Certaines
+         versions de 3CX en deduisaient que le dernier chat-message natif
+         n'etait pas encore arrive en bas et conservaient le badge non lu. */
+      removeTypingIndicator();
       return;
     }
 
-    const typingProfiles = profilesFromTypingElements(elements, profiles);
-    if (elements.length === 0 || typingProfiles.length === 0) {
-      indicator.hidden = true;
-      delete indicator.dataset.decTypingProfiles;
-      indicator.removeAttribute("aria-label");
-      indicator.querySelector(".dec-slack-typing-avatars")?.replaceChildren();
+    const indicator = ensureTypingIndicator();
+    if (!indicator) {
       return;
     }
 
@@ -3645,11 +3782,6 @@
   }
 
   function positionChatToastStack() {
-    const stack = document.getElementById(CHAT_TOAST_STACK_ID);
-    if (!stack) {
-      return;
-    }
-
     let top = 12;
     document
       .querySelectorAll(
@@ -3667,34 +3799,53 @@
           top = Math.max(top, rect.bottom + 12);
         }
       });
-    stack.style.setProperty("top", `${Math.ceil(top)}px`, "important");
+    let nextTop = Math.ceil(top);
+    document
+      .querySelectorAll(`${CHAT_TOAST_SELECTOR}.dec-slack-chat-toast`)
+      .forEach((toast) => {
+        if (!toast.isConnected) {
+          return;
+        }
+        const style = window.getComputedStyle(toast);
+        if (style.display === "none" || style.visibility === "hidden") {
+          return;
+        }
+
+        toast.style.setProperty(
+          "--dec-slack-chat-toast-top",
+          `${nextTop}px`,
+        );
+        nextTop += Math.max(toast.getBoundingClientRect().height, 78) + 12;
+      });
   }
 
-  function ensureChatToastStack() {
-    let stack = document.getElementById(CHAT_TOAST_STACK_ID);
-    if (!stack && document.body) {
-      stack = document.createElement("div");
-      stack.id = CHAT_TOAST_STACK_ID;
-      stack.setAttribute("role", "region");
-      stack.setAttribute("aria-label", "Notifications 3CX");
-      document.body.appendChild(stack);
+  function scheduleChatToastPositioning() {
+    if (chatToastPositionScheduled) {
+      return;
     }
+    chatToastPositionScheduled = true;
+    window.requestAnimationFrame(() => {
+      chatToastPositionScheduled = false;
+      positionChatToastStack();
+    });
+  }
 
+  function ensureChatToastPositioning() {
     if (!chatToastStackInitialized) {
       chatToastStackInitialized = true;
-      window.addEventListener("resize", positionChatToastStack);
-      document.addEventListener("scroll", positionChatToastStack, true);
+      window.addEventListener("resize", scheduleChatToastPositioning);
+      document.addEventListener("scroll", scheduleChatToastPositioning, true);
     }
-    positionChatToastStack();
-    return stack;
+    scheduleChatToastPositioning();
   }
 
   function enhanceChatToastAppearance(toast) {
-    const stack = ensureChatToastStack();
-    if (stack && toast.parentElement !== stack) {
-      stack.appendChild(toast);
-    }
+    /* Ne jamais déplacer ce composant hors de son parent Angular natif.
+       3CX doit pouvoir le mettre à jour puis le détruire dans son propre
+       conteneur, sans erreur removeChild ni reconstruction de l'application. */
+    ensureChatToastPositioning();
     if (enhancedChatToasts.has(toast)) {
+      scheduleChatToastPositioning();
       return;
     }
     enhancedChatToasts.add(toast);
@@ -3737,6 +3888,7 @@
         toast.querySelector("button.btn-gray")?.click();
       }
     });
+    scheduleChatToastPositioning();
   }
 
   function processChatToastNotification(toast) {
@@ -3791,7 +3943,7 @@
       return;
     }
 
-    ensureChatToastStack();
+    ensureChatToastPositioning();
     document.querySelectorAll(CHAT_TOAST_SELECTOR).forEach((toast) => {
       initialChatToasts.add(toast);
       processChatToastNotification(toast);
@@ -3799,12 +3951,29 @@
 
     chatToastObserver = new MutationObserver((mutations) => {
       const candidateToasts = new Set();
+      let toastLayoutChanged = false;
       mutations.forEach((mutation) => {
-        chatToastsFromMutation(mutation).forEach((toast) => {
+        const mutationToasts = chatToastsFromMutation(mutation);
+        if (mutationToasts.size > 0) {
+          toastLayoutChanged = true;
+        }
+        mutationToasts.forEach((toast) => {
           candidateToasts.add(toast);
+        });
+        mutation.removedNodes.forEach((node) => {
+          if (
+            node.nodeType === Node.ELEMENT_NODE &&
+            (node.matches(CHAT_TOAST_SELECTOR) ||
+              node.querySelector(CHAT_TOAST_SELECTOR))
+          ) {
+            toastLayoutChanged = true;
+          }
         });
       });
       candidateToasts.forEach(processChatToastNotification);
+      if (toastLayoutChanged) {
+        scheduleChatToastPositioning();
+      }
     });
     chatToastObserver.observe(document.documentElement, {
       childList: true,
