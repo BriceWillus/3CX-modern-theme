@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      1.8.6
+// @version      2.0.0-beta.5
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -17,7 +17,8 @@
   const SCRIPT_MARKER = "__dec3cxSlackAvatars";
   const AVATAR_CLASS = "dec-slack-message-avatar";
   const STYLE_ID = "dec-slack-message-avatar-styles";
-  const PARTICIPANT_SELECTOR = "app-chat-participants li";
+  const PARTICIPANT_SELECTOR =
+    'app-chat-participants li, app-chat-participants [data-qa="chat-participant"]';
   const MESSAGE_SELECTOR = "chat-message";
   const CHAT_TOAST_SELECTOR = "chat-toast-component";
   const CHAT_TOAST_STACK_ID = "dec-slack-chat-toast-stack";
@@ -1514,7 +1515,7 @@
     }
 
     document
-      .querySelectorAll(`${MESSAGE_SELECTOR} .message-text-internal`)
+      .querySelectorAll(`${MESSAGE_SELECTOR} .message-text-internal, chat-message app-chat-message-text > span`)
       .forEach(replaceCustomEmojiCodes);
   }
 
@@ -1538,7 +1539,8 @@
     const element =
       target?.nodeType === Node.ELEMENT_NODE ? target : target?.parentElement;
     return element?.closest?.(
-      "#chat-form-controls emoji-text-input .message-input, " +
+      "app-chat-message-input emoji-text-input [contenteditable='true'], " +
+        "#chat-form-controls emoji-text-input .message-input, " +
         "#chat-form-controls textarea, " +
         "#chat-form-controls [contenteditable='true']",
     ) || null;
@@ -1905,16 +1907,22 @@
 
   function participantProfileFromRow(row) {
     const line = row.querySelector("app-extension-line-view");
-    const rowText = line?.textContent || row.textContent || "";
-    const extension = extensionFromText(rowText);
+    const nameElement = row.querySelector('[data-qa="name"]');
+    const fullName = String(
+      nameElement?.textContent || line?.textContent || row.textContent || "",
+    ).trim();
+    const extension = extensionFromText(fullName);
 
     if (!extension) {
       return null;
     }
 
     const name =
+      nameElement?.textContent
+        ?.replace(new RegExp(`\\s*${extension}\\s*$`), "")
+        .trim() ||
       line?.querySelector(".text-truncate")?.textContent?.trim() ||
-      rowText.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
+      fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
 
     const image = row.querySelector("app-avatar img.avatar-content, app-avatar img");
     const initialElement = row.querySelector(
@@ -2128,7 +2136,7 @@
     // Si le panneau d'informations est fermé, la liste des conversations
     // contient souvent le même profil, y compris les avatars en initiales.
     document.querySelectorAll("chat-item").forEach((item) => {
-      const nameElement = item.querySelector(".header-name");
+      const nameElement = item.querySelector("[data-qa='header-name'], .header-name");
       const fullName = String(nameElement?.textContent || "").trim();
       const extension = extensionFromText(fullName);
 
@@ -2179,13 +2187,17 @@
   function directConversationProfileFromHeader() {
     const header = document.querySelector("chat-messages-header");
     const fullName = String(
-      header?.querySelector("#showParticipants")?.textContent || "",
+      header?.querySelector("[data-qa='chat-name'], #showParticipants")?.textContent || "",
     ).trim();
     const extension = extensionFromText(fullName);
 
     // Les conversations directes affichent « Nom Prénom 62 » dans l'en-tête.
     // Un groupe ne se termine normalement pas par un numéro d'extension.
     if (!header || !extension) {
+      return null;
+    }
+    if (header.querySelector('[data-qa="chat-name"]') &&
+        header.querySelector('app-avatar img[alt]')?.getAttribute('alt') !== extension) {
       return null;
     }
 
@@ -2731,7 +2743,7 @@
     const directProfile = directConversationProfileFromHeader();
     const nativeTitle = String(
       document
-        .querySelector("chat-messages-header #showParticipants")
+        .querySelector("chat-messages-header [data-qa='chat-name'], chat-messages-header #showParticipants")
         ?.textContent || "",
     ).trim();
     const expectedLabels = [
@@ -2761,7 +2773,7 @@
                 element.getAttribute("href"),
                 element.getAttribute("routerlink"),
                 element.getAttribute("ng-reflect-router-link"),
-              ].some((value) => String(value || "").includes(routeFragment)),
+              ].some((value) => String(value || "").split(/[?#]/).includes(routeFragment)),
           ),
         )
       : null;
@@ -2770,7 +2782,7 @@
       routeItem ||
       items.find((item) => {
         const label = normalizedTypingText(
-          item.querySelector(".header-name")?.textContent || "",
+          item.querySelector("[data-qa='header-name'], .header-name")?.textContent || "",
         );
         return expectedLabels.some(
           (expected) => label === expected || label.startsWith(`${expected} `),
@@ -2807,7 +2819,7 @@
     const matches = [...candidates].filter(
       (element) =>
         !element.closest(`#${TYPING_INDICATOR_ID}`) &&
-        !element.querySelector("chat-message, #chat-form-controls") &&
+        !element.querySelector("chat-message, #chat-form-controls, app-chat-message-input") &&
         containsTypingText(nativeTypingElementText(element)),
     );
 
@@ -2827,14 +2839,31 @@
   }
 
   function typingProfileCandidates(profiles) {
-    const candidates = new Map(profiles);
+    const currentParticipants = new Map();
+    document.querySelectorAll(PARTICIPANT_SELECTOR).forEach((row) => {
+      const profile = participantProfileFromRow(row);
+      if (profile?.extension) {
+        currentParticipants.set(profile.extension, profile);
+      }
+    });
+    const restrictToCurrentParticipants = currentParticipants.size > 0;
+    const candidates = restrictToCurrentParticipants
+      ? new Map(currentParticipants)
+      : new Map(profiles);
 
     document
-      .querySelectorAll(`${MESSAGE_SELECTOR} > .message-name`)
+      .querySelectorAll(
+        `${MESSAGE_SELECTOR} > .message-name, ` +
+          `${MESSAGE_SELECTOR} > .message-row > .sender-name`,
+      )
       .forEach((nameElement) => {
         const fullName = String(nameElement.textContent || "").trim();
         const extension = extensionFromText(fullName);
-        if (!extension) {
+        if (
+          !extension ||
+          (restrictToCurrentParticipants &&
+            !currentParticipants.has(extension))
+        ) {
           return;
         }
 
@@ -2947,7 +2976,8 @@
   function ensureTypingIndicator() {
     const messages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
     const lastMessage = messages.at(-1) || null;
-    const host = lastMessage?.parentElement;
+    const modern = document.documentElement.classList.contains('dec-slack-ui-v2');
+    const host = modern ? lastMessage : lastMessage?.parentElement;
     if (!lastMessage || !host) {
       document.getElementById(TYPING_INDICATOR_ID)?.remove();
       return null;
@@ -2976,7 +3006,9 @@
       indicator.parentElement !== host ||
       lastMessage.nextSibling !== indicator
     ) {
-      host.insertBefore(indicator, lastMessage.nextSibling);
+      if (modern) {
+        if (indicator.parentElement !== host) host.appendChild(indicator);
+      } else host.insertBefore(indicator, lastMessage.nextSibling);
     }
     return indicator;
   }
@@ -3610,7 +3642,7 @@
     }
 
     const ownMessage = Boolean(
-      message.querySelector(".message-inner.message-right"),
+      message.querySelector(".message-inner.message-right, .message-align.sent-by-me"),
     );
     const enterClass = ownMessage ? ENTER_OWN_CLASS : ENTER_OTHER_CLASS;
     message.classList.add(enterClass);
@@ -3651,7 +3683,8 @@
 
   function originalUrlForPreview(image, sessionId) {
     const filename =
-      image.closest("a[download]")?.getAttribute("download") || "";
+      image.closest("a[download]")?.getAttribute("download") ||
+      (image.closest('app-chat-message-file-preview') ? image.getAttribute('title') : '') || "";
     if (!/\.(?:png|webp|gif)$/i.test(filename)) {
       return "";
     }
@@ -3736,7 +3769,8 @@
     const previewObserver = ensureOriginalPreviewObserver();
     document
       .querySelectorAll(
-        'chat-message file-preview a[download] img[src*="/MyPhone/downloadChatFile/"][src*=".preview"]',
+        'chat-message file-preview a[download] img[src*="/MyPhone/downloadChatFile/"][src*=".preview"], ' +
+        'chat-message app-chat-message-file-preview img[src*="/MyPhone/downloadChatFile/"][src*=".preview"]',
       )
       .forEach((image) => {
         const originalUrl = originalUrlForPreview(image, sessionId);
@@ -3775,9 +3809,18 @@
   }
 
   function isCompleteChatToast(toast) {
-    return Boolean(
-      toast.querySelector("button.btn-primary") &&
-        toast.querySelector("button.btn-gray"),
+    return Boolean(replyButtonFromToast(toast) && ignoreButtonFromToast(toast));
+  }
+
+  function replyButtonFromToast(toast) {
+    return toast?.querySelector(
+      '[data-qa="reply-in-chat"], button.btn-primary',
+    );
+  }
+
+  function ignoreButtonFromToast(toast) {
+    return toast?.querySelector(
+      '[data-qa="ignore-chat"], button.btn-gray, button.btn-border',
     );
   }
 
@@ -3786,7 +3829,8 @@
     document
       .querySelectorAll(
         "chat-searcher-component.layout-type4-header, " +
-          ".layout-type4-header, #dec-slack-controls",
+          ".layout-type4-header, [layout-type4-header], app-header, " +
+          "#dec-slack-controls",
       )
       .forEach((element) => {
         const style = window.getComputedStyle(element);
@@ -3799,6 +3843,18 @@
           top = Math.max(top, rect.bottom + 12);
         }
       });
+    const modernToastHost = document.querySelector("chat-toast-container");
+    if (
+      modernToastHost &&
+      document.documentElement.classList.contains("dec-slack-ui-v2")
+    ) {
+      modernToastHost.style.setProperty(
+        "--dec-slack-chat-toast-host-top",
+        `${Math.ceil(top)}px`,
+      );
+      return;
+    }
+
     let nextTop = Math.ceil(top);
     document
       .querySelectorAll(`${CHAT_TOAST_SELECTOR}.dec-slack-chat-toast`)
@@ -3865,27 +3921,72 @@
     closeButton.textContent = "×";
     toast.appendChild(closeButton);
 
-    toast.addEventListener("click", (event) => {
-      if (event.target.closest(".dec-slack-chat-toast-close")) {
-        event.stopPropagation();
-        toast.querySelector("button.btn-gray")?.click();
-        return;
+    const eventHitsCloseButton = (event) => {
+      if (event.target.closest?.(".dec-slack-chat-toast-close")) {
+        return true;
       }
+      if (!(event instanceof MouseEvent)) {
+        return false;
+      }
+      const rect = closeButton.getBoundingClientRect();
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      );
+    };
 
+    const dismissToast = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      ignoreButtonFromToast(toast)?.click();
+    };
+
+    /* Le gestionnaire natif « Répondre » est attaché à la bulle entière.
+       L'interception en phase capture donne toujours la priorité à la croix,
+       même si une couche transparente du bouton natif la recouvre. */
+    toast.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (eventHitsCloseButton(event)) {
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
+      },
+      true,
+    );
+    toast.addEventListener(
+      "click",
+      (event) => {
+        if (eventHitsCloseButton(event)) {
+          dismissToast(event);
+        }
+      },
+      true,
+    );
+
+    toast.addEventListener("click", (event) => {
       // Évite la récursion lorsque le clic natif Répondre remonte jusqu'ici.
-      if (event.target.closest("button.btn-primary, button.btn-gray")) {
+      if (
+        event.target.closest(
+          '[data-qa="reply-in-chat"], [data-qa="ignore-chat"], ' +
+            "button.btn-primary, button.btn-gray, button.btn-border",
+        )
+      ) {
         return;
       }
-      toast.querySelector("button.btn-primary")?.click();
+      replyButtonFromToast(toast)?.click();
     });
 
     toast.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        toast.querySelector("button.btn-primary")?.click();
+        replyButtonFromToast(toast)?.click();
       } else if (event.key === "Escape") {
         event.preventDefault();
-        toast.querySelector("button.btn-gray")?.click();
+        ignoreButtonFromToast(toast)?.click();
       }
     });
     scheduleChatToastPositioning();
@@ -3985,6 +4086,13 @@
   function enhanceVisibleMessages() {
     installAvatarStyles();
     ensureControls();
+    const modern = Boolean(document.querySelector('chat-component app-layout-type4'));
+    document.documentElement.classList.toggle('dec-slack-ui-v2', modern);
+    if (modern) {
+      enhanceModernChat();
+      initialMessageScan = false;
+      return;
+    }
     enhanceConversationHeader();
     synchronizeDirectConversationProfile();
     const profiles = buildParticipantMap();
@@ -4001,6 +4109,163 @@
     enhanceCustomEmojis();
     enhanceOriginalImagePreviews();
     initialMessageScan = false;
+  }
+
+  /* UI de septembre 2026. Les nœuds Angular restent à leur emplacement.
+     Seules nos décorations portent data-dec-created et peuvent être retirées. */
+  function modernText(element, value) {
+    if (element && element.textContent !== value) element.textContent = value;
+  }
+
+  function modernDecoration(parent, className, tag = 'span') {
+    let element = [...parent.children].find(child => child.classList.contains(className));
+    if (!element) {
+      element = document.createElement(tag);
+      element.className = className;
+      element.dataset.decCreated = 'true';
+      parent.appendChild(element);
+    }
+    return element;
+  }
+
+  function modernOwnProfile(profiles) {
+    const avatar = document.querySelector('app-header wc-account-menu app-avatar');
+    const image = avatar?.querySelector('img[data-qa="profile-image"]');
+    const extension = image?.getAttribute('alt') || '';
+    const cached = readCachedOwnProfile();
+    const known = profiles.get(extension) || (cached?.extension === extension ? cached : null);
+    return {
+      extension,
+      name: known?.name || 'Moi',
+      imageUrl: image?.src || '',
+      initials: avatar?.querySelector('.avatar-content:not(img)')?.textContent?.trim() || 'M',
+    };
+  }
+
+  function enhanceModernHeader() {
+    const header = document.querySelector('chat-messages-header');
+    const title = header?.querySelector('[data-qa="chat-name"]');
+    if (!title) return;
+    header.classList.add('dec-v2-header');
+    const identity = [...header.children].find(child => child.contains(title));
+    identity?.classList.add('dec-v2-native-identity');
+    const action = header.querySelector('[data-qa="show-menu"], [data-qa="add-user"], [data-qa="make-call"]');
+    const actions = action && [...header.children].find(child => child.contains(action));
+    if (actions !== identity) actions?.classList.add('dec-v2-actions');
+    const card = modernDecoration(header, 'dec-v2-title-card', 'button');
+    card.type = 'button';
+    card.onclick = () => title.click();
+    const contact = directConversationProfileFromHeader();
+    modernText(modernDecoration(card, 'dec-v2-title'), contact?.name || title.textContent.trim());
+    const line = modernDecoration(card, 'dec-v2-presence');
+    const description = header.querySelector('[data-qa="chat-description"]');
+    const label = contact ? description?.textContent.trim() || '' : '';
+    line.hidden = !label || containsTypingText(label);
+    modernText(modernDecoration(line, 'dec-v2-presence-label'), label);
+    const dot = modernDecoration(line, 'dec-v2-presence-dot');
+    const nativeDot = identity?.querySelector('[data-qa="status-indicator"]');
+    const color = nativeDot ? window.getComputedStyle(nativeDot).backgroundColor : '';
+    dot.hidden = !color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)';
+    if (!dot.hidden && dot.style.backgroundColor !== color) dot.style.backgroundColor = color;
+  }
+
+  function modernMessageRecords(profiles) {
+    const contact = directConversationProfileFromHeader();
+    let previousProfile = null;
+    return [...document.querySelectorAll('app-chat-messages chat-message')].map(message => {
+      const align = message.querySelector('.message-align');
+      if (!align) return null;
+      const nativeName = message.querySelector(
+        ':scope > .message-name, .message-row > .message-name, ' +
+          ':scope > .message-row > .sender-name',
+      );
+      const own =
+        align.classList.contains('sent-by-me') ||
+        nativeName?.classList.contains('sent-by-me');
+      const fullName = nativeName?.textContent.trim() || '';
+      const extension = extensionFromText(fullName);
+      const newSender = Boolean(
+        nativeName || message.querySelector('.message-content.new-sender'),
+      );
+      const boundary = message.previousElementSibling?.matches('.day-title');
+      const profile = own ? currentOwnProfile : contact ||
+        (extension ? profiles.get(extension) || {
+          extension, name: fullName.replace(/\s*\d+\s*$/, ''), imageUrl: '', initials: initialsFromName(fullName),
+        } : (!newSender && !boundary ? previousProfile : null));
+      previousProfile = profile;
+      const time = [...message.querySelectorAll('.message-data small')].find(el => /^\s*\d{1,2}:\d{2}\s*$/.test(el.textContent));
+      return { message, align, own, profile, time, boundary, newSender, nativeName,
+        key: own ? 'own' : profile?.extension || profile?.name || '' };
+    }).filter(Boolean);
+  }
+
+  function enhanceModernReceipts(records) {
+    const contact = directConversationProfileFromHeader();
+    const receipts = records.map(record => ({...record,
+      receipt: record.message.querySelector('delivered-check:not([data-dec-created])'),
+    }));
+    const read = receipt => receipt && [...receipt.querySelectorAll('[title], [aria-label]')]
+      .some(el => /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
+        (el.getAttribute('title') || el.getAttribute('aria-label') || '').trim()));
+    const latest = receipts.filter(r => r.own && read(r.receipt)).at(-1);
+    receipts.forEach(({ message, own, receipt }) => {
+      message.classList.remove(LATEST_READ_CLASS);
+      message.querySelectorAll(`.${READ_AVATAR_CLASS}, .${SENT_RECEIPT_COPY_CLASS}`).forEach(el => el.remove());
+      if (!receipt) return;
+      receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS, HIDDEN_SENT_RECEIPT_CLASS, REDUNDANT_READ_RECEIPT_CLASS);
+      const isRead = read(receipt);
+      receipt.classList.toggle('dec-v2-receipt-hidden', !own || (isRead && message !== latest?.message));
+      let portrait = message.querySelector(':scope > .dec-v2-read-avatar');
+      if (message === latest?.message && contact) {
+        receipt.classList.add('dec-v2-receipt-hidden');
+        portrait = portrait || modernDecoration(message, 'dec-v2-read-avatar');
+        applyProfileToAvatar(portrait, contact, contact.name, contact.extension);
+        portrait.setAttribute('aria-label', `Lu par ${contact.name}`);
+        portrait.setAttribute('role', 'img');
+      } else portrait?.remove();
+    });
+  }
+
+  function enhanceModernChat() {
+    enhanceModernHeader();
+    scheduleChatToastPositioning();
+    const profiles = buildParticipantMap();
+    currentOwnProfile = modernOwnProfile(profiles);
+    const records = modernMessageRecords(profiles);
+    records.forEach((record, index) => {
+      const { message, own, profile, time, boundary, newSender, nativeName, key } = record;
+      const previous = records[index - 1];
+      const next = records[index + 1];
+      const start = !previous || boundary || newSender || !key || previous.key !== key;
+      const end = !next || next.boundary || next.newSender || !key || next.key !== key;
+      message.classList.add('dec-v2-message');
+      message.classList.toggle('dec-v2-own', own);
+      message.classList.toggle('dec-v2-group-start', start);
+      message.classList.toggle('dec-v2-group-end', end);
+      // Un auteur de groupe non identifié conserve son rendu natif.
+      message.classList.toggle('dec-v2-has-author', Boolean(profile));
+      nativeName?.parentElement?.classList.add('dec-v2-native-sender-row');
+      if (start && profile) {
+        const heading = modernDecoration(message, 'dec-v2-message-heading');
+        modernText(modernDecoration(heading, 'dec-v2-author'), profile.name);
+        modernText(modernDecoration(heading, 'dec-v2-time'), time?.textContent.trim() || '');
+        const portrait = modernDecoration(message, 'dec-v2-message-avatar');
+        applyProfileToAvatar(portrait, profile, profile.name, profile.extension);
+        portrait.setAttribute('aria-hidden', 'true');
+      } else {
+        message.querySelector(':scope > .dec-v2-message-heading')?.remove();
+        message.querySelector(':scope > .dec-v2-message-avatar')?.remove();
+      }
+      markMessage(message, index >= records.length - 3);
+    });
+    enhanceModernReceipts(records);
+    enhanceCustomEmojis();
+    enhanceOriginalImagePreviews();
+    // Le HTML fourni ne contient pas le panneau des participants de groupe.
+    // Pas d'identité déduite d'un cache global en l'absence de cette preuve.
+    if (directConversationProfileFromHeader() || document.querySelector(PARTICIPANT_SELECTOR)) {
+      enhanceTypingIndicator(profiles);
+    } else document.getElementById(TYPING_INDICATOR_ID)?.remove();
   }
 
   let updateScheduled = false;
@@ -4028,7 +4293,7 @@
     const element = mutationElement(node);
     return Boolean(
       element?.closest?.(
-        "#chat-form-controls, " +
+        "#chat-form-controls, app-chat-message-input, " +
           `#${CONTROLS_ID}, ` +
           `#${EMOJI_AUTOCOMPLETE_ID}, ` +
           `#${CHAT_TOAST_STACK_ID}, ` +
@@ -4111,6 +4376,6 @@
     if (!document.hidden) {
       scheduleUpdate();
     }
-  }, 2500);
+  }, 8000);
   scheduleUpdate();
 })();
