@@ -1,52 +1,18 @@
 /*
  * 3CX — thème inspiré de Slack
  * Domaine : decindustrie.3cx.no
- * Conçu pour Stylish, juillet 2026
+ * Stylish — version 2.0.0-beta.8
  */
 
 :root {
-  --slack-aubergine: #4a154b;
-  --slack-aubergine-dark: #350d36;
-  --slack-aubergine-soft: #f4edf4;
-  --slack-green: #2eb67d;
-  --slack-blue: #1264a3;
-  --slack-red: #e01e5a;
-  --slack-ink: #1d1c1d;
-  --slack-muted: #616061;
-  --slack-line: #dddddd;
-  --slack-canvas: #ffffff;
-  --slack-panel: #f8f8f8;
-
-  --bg-secondary: var(--slack-aubergine) !important;
-  --bg-secondary-hover: var(--slack-aubergine-dark) !important;
-  --bg-secondary-variant: #7c3085 !important;
-  --bg-tertiary: var(--slack-canvas) !important;
-  --bg-tertiary-active: var(--slack-aubergine-soft) !important;
-  --bg-tertiary-hover: #f2f2f2 !important;
-  --bg-tertiary-variant: var(--slack-panel) !important;
-  --bg-sender-chat: #e8f5ee !important;
-
-  --text-secondary: var(--slack-ink) !important;
-  --text-tertiary: var(--slack-muted) !important;
-  --text-tertiary-hover: var(--slack-ink) !important;
-  --text-sender-chat: var(--slack-ink) !important;
-  --scrollbar: #c9c7c9 !important;
-
-  --bs-primary: var(--slack-aubergine) !important;
-  --bs-primary-rgb: 74, 21, 75 !important;
-  --bs-link-color: var(--slack-blue) !important;
-  --bs-link-color-rgb: 18, 100, 163 !important;
   --bs-body-font-family: Slack-Lato, Lato, "Segoe UI", Arial, sans-serif !important;
   --bs-font-sans-serif: Slack-Lato, Lato, "Segoe UI", Arial, sans-serif !important;
   --bs-border-radius: 8px !important;
-  --bs-focus-ring-color: rgba(74, 21, 75, 0.22) !important;
 }
 
 html,
 body,
 app {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
   font-family: Slack-Lato, Lato, "Segoe UI", Arial, sans-serif !important;
   -webkit-font-smoothing: antialiased;
 }
@@ -55,13 +21,13 @@ app {
 app-header,
 app-header header,
 app-header .navbar {
-  background: var(--slack-aubergine-dark) !important;
   color: #fff !important;
 }
 
 app-header {
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12),
-              0 1px 4px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.18);
   position: relative;
   z-index: 10;
 }
@@ -75,14 +41,6 @@ app-header span {
 }
 
 /* Navigation principale aubergine */
-app-aside,
-app-nav,
-app-nav nav,
-app-nav .navi,
-app-nav .nav {
-  background: var(--slack-aubergine) !important;
-  color: rgba(255, 255, 255, 0.86) !important;
-}
 
 app-nav .nav-item {
   margin: 2px 5px !important;
@@ -93,8 +51,10 @@ app-nav .nav-item {
 app-nav .nav-item > a,
 app-nav .nav-item > button {
   border-radius: 8px !important;
-  color: rgba(255, 255, 255, 0.84) !important;
-  transition: background-color 120ms ease, color 120ms ease !important;
+
+  transition:
+    background-color 120ms ease,
+    color 120ms ease !important;
 }
 
 app-nav .nav-item:hover > a,
@@ -106,70 +66,35 @@ app-nav .nav-item:hover > button {
 app-nav .nav-item .active,
 app-nav .nav-item a.active,
 app-nav .nav-item button.active {
-  background: rgba(255, 255, 255, 0.20) !important;
+  background: rgba(255, 255, 255, 0.2) !important;
   color: #fff !important;
 }
 
 app-nav .nav-title {
-  color: inherit !important;
   font-size: 11px !important;
   font-weight: 600 !important;
 }
 
 /* Barre de recherche */
-chat-searcher-component,
-chat-searcher-component search-bar {
-  background: var(--slack-panel) !important;
-  color: var(--slack-ink) !important;
-}
-
-chat-searcher-component > search-bar > div,
-chat-searcher-component search-bar > div {
-  border-color: var(--slack-line) !important;
-  background: var(--slack-panel) !important;
-}
 
 #inputSearch {
-  color: var(--slack-ink) !important;
   font-size: 14px !important;
 }
 
 #inputSearch::placeholder {
-  color: #8b898b !important;
   opacity: 1 !important;
 }
 
 /* Liste des conversations */
-chat-list-container,
-chat-list-items,
-#chatScrollableList,
-.infinite-conversations-scroll {
-  background: var(--slack-panel) !important;
-  color: var(--slack-ink) !important;
-}
-
-chat-list-container {
-  border-color: var(--slack-line) !important;
-}
 
 chat-item {
-  background: transparent !important;
-  color: var(--slack-ink) !important;
   margin: 3px 6px !important;
   width: calc(100% - 12px) !important;
   border: 1px solid transparent !important;
   border-radius: 8px !important;
-  transition: background-color 100ms ease, border-color 100ms ease !important;
-}
-
-chat-item:hover {
-  background: #eeeeee !important;
-}
-
-chat-item.selected-tile {
-  background: var(--slack-aubergine-soft) !important;
-  border-color: #e1d5e1 !important;
-  box-shadow: inset 3px 0 0 var(--slack-aubergine) !important;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease !important;
 }
 
 chat-item .header-name,
@@ -184,37 +109,11 @@ chat-item .header-name {
   font-weight: 700 !important;
 }
 
-chat-item .last-sent,
-chat-item .message-cell-text {
-  color: var(--slack-muted) !important;
-}
-
 chat-item .context-btn {
-  color: var(--slack-muted) !important;
   border-radius: 6px !important;
 }
 
-chat-item .context-btn:hover {
-  background: #e2e2e2 !important;
-  color: var(--slack-ink) !important;
-}
-
 /* En-tête du chat */
-#chat-window,
-app-chat-messages,
-.chat-messages-root {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
-}
-
-chat-messages-header,
-chat-messages-header .header,
-.header.b-b {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
-  border-color: var(--slack-line) !important;
-  box-shadow: 0 1px 0 var(--slack-line) !important;
-}
 
 chat-messages-header button,
 chat-messages-header .btn,
@@ -225,45 +124,13 @@ chat-messages-header span {
 
 chat-messages-header button:hover,
 chat-messages-header .btn:hover {
-  background: #f2f2f2 !important;
-  color: var(--slack-ink) !important;
   border-radius: 8px !important;
 }
 
 /* Fil de discussion */
-.chat-massages-main,
-.messages {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
-}
-
-chat-message {
-  color: var(--slack-ink) !important;
-}
-
-chat-message .message-text {
-  color: var(--slack-ink) !important;
-  border: 1px solid #e6e6e6 !important;
-  border-radius: 12px !important;
-  padding: 8px 10px !important;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04) !important;
-}
-
-chat-message .message-left .message-text {
-  background: #f4f4f4 !important;
-}
 
 chat-message .message-right .message-text {
-  background: #e8f5ee !important;
   border-color: #cae8d8 !important;
-}
-
-chat-message .message-text-internal,
-chat-message .message-title-time,
-chat-message .message-time-info,
-chat-message small,
-chat-message p {
-  color: inherit !important;
 }
 
 chat-message .message-time-info,
@@ -282,19 +149,12 @@ chat-message a:hover {
 }
 
 .new-day-title {
-  color: var(--slack-muted) !important;
   font-weight: 700 !important;
 }
 
 .new-day-title hr,
 chat-message hr {
-  border-color: var(--slack-line) !important;
   opacity: 1 !important;
-}
-
-file-preview,
-preview-text-message {
-  color: var(--slack-ink) !important;
 }
 
 file-preview img,
@@ -305,37 +165,19 @@ preview-text-message img,
 
 /* Zone de saisie */
 #chat-form-controls {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
-  border-color: var(--slack-line) !important;
   padding: 7px 9px !important;
   gap: 4px !important;
 }
 
 #chat-form-controls .message-input-wrap {
-  background: var(--slack-canvas) !important;
   border: 1px solid #868686 !important;
   border-radius: 10px !important;
   min-height: 38px !important;
   padding: 6px 8px !important;
-  box-shadow: 0 0 0 0 rgba(74, 21, 75, 0) !important;
-  transition: border-color 120ms ease, box-shadow 120ms ease !important;
-}
 
-#chat-form-controls .message-input-wrap:focus-within {
-  border-color: var(--slack-aubergine) !important;
-  box-shadow: 0 0 0 3px rgba(74, 21, 75, 0.14) !important;
-}
-
-emoji-text-input,
-emoji-text-input .input-restriction,
-emoji-text-input .message-input {
-  background: transparent !important;
-  color: var(--slack-ink) !important;
-}
-
-emoji-text-input .placeholder {
-  color: #8b898b !important;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease !important;
 }
 
 #chat-form-controls .btn,
@@ -344,30 +186,7 @@ emoji-text-input .placeholder {
   border-radius: 8px !important;
 }
 
-#chat-form-controls .btn:hover,
-#chat-form-controls button:hover {
-  background: #f2f2f2 !important;
-  color: var(--slack-aubergine) !important;
-}
-
 /* Panneau d’informations */
-app-chat-info-panel,
-app-chat-info-panel .inner-container,
-app-chat-participants,
-app-chat-info-panel .list-group,
-app-chat-info-panel .list-group-item {
-  background: var(--slack-panel) !important;
-  color: var(--slack-ink) !important;
-  border-color: var(--slack-line) !important;
-}
-
-app-chat-info-panel {
-  border-color: var(--slack-line) !important;
-}
-
-app-chat-info-panel a {
-  color: var(--slack-blue) !important;
-}
 
 /* Menus, fenêtres et petits composants */
 .dropdown-menu,
@@ -375,27 +194,21 @@ app-chat-info-panel a {
 .modal-content,
 .popover,
 .picker-container {
-  background: var(--slack-canvas) !important;
-  color: var(--slack-ink) !important;
   border: 1px solid var(--slack-line) !important;
   border-radius: 10px !important;
-  box-shadow: 0 8px 30px rgba(29, 28, 29, 0.18) !important;
 }
 
 .dropdown-item {
-  color: var(--slack-ink) !important;
   border-radius: 6px !important;
-}
-
-.dropdown-item:hover,
-.dropdown-item:focus {
-  background: var(--slack-aubergine-soft) !important;
 }
 
 button,
 .btn {
-  transition: background-color 100ms ease, color 100ms ease,
-              border-color 100ms ease, box-shadow 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    border-color 100ms ease,
+    box-shadow 100ms ease !important;
 }
 
 button:focus-visible,
@@ -407,7 +220,6 @@ input:focus-visible {
 
 /* Barres de défilement */
 * {
-  scrollbar-color: #b8b6b8 transparent !important;
   scrollbar-width: thin !important;
 }
 
@@ -421,22 +233,11 @@ input:focus-visible {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #b8b6b8 !important;
   border: 2px solid transparent !important;
   border-radius: 999px !important;
-  background-clip: padding-box !important;
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: #929092 !important;
-  background-clip: padding-box !important;
-}
-
-/* ==========================================================
-   V2 — FIL DE MESSAGES À LA SLACK
-   Tous les messages sont alignés à gauche et regroupés par
-   auteur. La classe 3CX "new-sender" ouvre chaque groupe.
-   ========================================================== */
+/* FIL DE MESSAGES À LA SLACK */
 
 chat-component {
   /* Valeurs de repli pour un contact ou un groupe non identifié. */
@@ -611,7 +412,7 @@ chat-message .message-inner:has(> .message-text.new-sender)::before {
   background-size: cover !important;
   border: 0 !important;
   border-radius: 7px !important;
-  box-shadow: 0 0 0 1px rgba(29, 28, 29, 0.10) !important;
+  box-shadow: 0 0 0 1px rgba(29, 28, 29, 0.1) !important;
 }
 
 chat-message .message-inner:has(> .message-text.new-sender)::after {
@@ -667,20 +468,13 @@ chat-message:hover .message-inner:not(:has(> .message-text.new-sender)) > .messa
 }
 
 /* Survol de ligne très léger, caractéristique de Slack. */
-chat-message:hover {
-  background: #f8f8f8 !important;
-}
 
 /* Textes continus et lisibles. */
 chat-message .message-text-internal {
   margin: 0 !important;
-  color: var(--slack-ink) !important;
+
   font-size: 14px !important;
   line-height: 1.46 !important;
-}
-
-chat-message .message-text-internal span {
-  color: inherit !important;
 }
 
 /* Les pièces jointes restent des cartes, sans redevenir des bulles. */
@@ -700,7 +494,6 @@ chat-message file-preview > a {
   display: block !important;
   overflow: hidden !important;
   border: 1px solid var(--slack-line) !important;
-  background: #fff !important;
 }
 
 /* Les confirmations de livraison ne doivent pas recréer un alignement à droite. */
@@ -721,36 +514,22 @@ chat-message delivered-check {
   }
 }
 
-/* ==========================================================
-   V3 — CORRECTION DES DISCUSSIONS DE GROUPE
-   Dans un groupe, 3CX fournit le vrai nom dans .message-name.
-   On l'utilise à la place du libellé artificiel.
-   ========================================================== */
+/* CORRECTION DES DISCUSSIONS DE GROUPE */
 
 /* Le nom natif 3CX devient l'en-tête Slack du groupe de messages. */
 chat-message:has(> .message-name) > .message-name {
-  display: block !important;
   box-sizing: border-box !important;
-  position: relative !important;
+
   z-index: 3 !important;
-  width: auto !important;
-  max-width: 420px !important;
-  height: 21px !important;
-  margin: 8px 20px 0 68px !important;
-  padding: 0 !important;
+
   overflow: hidden !important;
-  color: var(--slack-ink) !important;
-  font-size: 14px !important;
-  font-weight: 750 !important;
-  line-height: 20px !important;
-  text-align: left !important;
+
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 
 /* Supprime "Interlocuteur" ou le nom reconstruit : le vrai nom est au-dessus. */
-chat-message:has(> .message-name)
-  .message-inner:has(> .message-text.new-sender)::after {
+chat-message:has(> .message-name) .message-inner:has(> .message-text.new-sender)::after {
   content: none !important;
   display: none !important;
 }
@@ -760,25 +539,17 @@ chat-message:has(> .message-name) .message-text.new-sender {
   padding-top: 2px !important;
 }
 
-chat-message:has(> .message-name)
-  .message-inner:has(> .message-text.new-sender) {
+chat-message:has(> .message-name) .message-inner:has(> .message-text.new-sender) {
   min-height: 36px !important;
 }
 
 /* Le pseudo-avatar natif des messages de groupe est masqué : selon la position
    du fil, 3CX pouvait encore le faire apparaître au niveau de l'en-tête. */
-chat-message:has(> .message-name)
-  .message-inner:has(> .message-text.new-sender)::before {
+chat-message:has(> .message-name) .message-inner:has(> .message-text.new-sender)::before {
   display: none !important;
 }
 
 /* L'heure rejoint la ligne du vrai nom. */
-chat-message:has(> .message-name)
-  .message-inner:has(> .message-text.new-sender)
-  > .message-title-time {
-  left: 250px !important;
-  top: -20px !important;
-}
 
 /* Le nom natif est déjà une séparation : espace vertical plus compact. */
 chat-message:has(> .message-name):has(.message-text.new-sender) {
@@ -787,16 +558,14 @@ chat-message:has(> .message-name):has(.message-text.new-sender) {
 
 /* Dans les groupes, 3CX identifie nos propres messages. Leur identité est
    fournie dynamiquement par le userscript pour chaque compte connecté. */
-chat-message:has(> .message-name.message-right)
-  .message-inner.message-right {
+chat-message:has(> .message-name.message-right) .message-inner.message-right {
   --slack-message-author: var(--slack-me-name);
   --slack-message-avatar: var(--slack-me-avatar);
 }
 
 /* Avatar neutre assumé pour les autres membres du groupe :
    3CX ne relie pas le nom du message à l'avatar du participant dans le DOM. */
-chat-message:has(> .message-name.message-left)
-  .message-inner.message-left {
+chat-message:has(> .message-name.message-left) .message-inner.message-left {
   --slack-message-avatar: url("https://decindustrie.3cx.no:5001/media/user.file-7ad8face.svg");
 }
 
@@ -812,18 +581,11 @@ chat-message:has(> .message-name.message-left)
   }
 }
 
-/* ==========================================================
-   V4 — THEME SOMBRE ET VRAIE LIGNE SLACK
-   Avatar | Nom | Heure
-          | Message
-   ========================================================== */
+/* THEME SOMBRE ET VRAIE LIGNE SLACK */
 
 :root {
   color-scheme: dark;
 
-  --slack-aubergine: #3f0e40;
-  --slack-aubergine-dark: #1f0b20;
-  --slack-aubergine-soft: #352638;
   --slack-green: #2eb67d;
   --slack-blue: #36c5f0;
   --slack-red: #e01e5a;
@@ -834,12 +596,7 @@ chat-message:has(> .message-name.message-left)
   --slack-panel: #222529;
   --slack-surface: #2c2f33;
   --slack-hover: #24272b;
-  --slack-own-group: rgba(74, 21, 75, 0.38);
-  --slack-own-border: rgba(207, 142, 211, 0.42);
 
-  --bg-secondary: var(--slack-aubergine) !important;
-  --bg-secondary-hover: #552156 !important;
-  --bg-secondary-variant: #6d2b70 !important;
   --bg-tertiary: var(--slack-canvas) !important;
   --bg-tertiary-active: var(--slack-aubergine-soft) !important;
   --bg-tertiary-hover: var(--slack-surface) !important;
@@ -850,14 +607,12 @@ chat-message:has(> .message-name.message-left)
   --text-tertiary-hover: #fff !important;
   --text-sender-chat: var(--slack-ink) !important;
   --scrollbar: #565960 !important;
-  --bs-primary: #cf8ed3 !important;
-  --bs-primary-rgb: 207, 142, 211 !important;
+
   --bs-link-color: var(--slack-blue) !important;
   --bs-link-color-rgb: 54, 197, 240 !important;
   --bs-body-color: var(--slack-ink) !important;
   --bs-body-bg: var(--slack-canvas) !important;
   --bs-border-color: var(--slack-line) !important;
-  --bs-focus-ring-color: rgba(207, 142, 211, 0.24) !important;
 }
 
 html,
@@ -879,14 +634,12 @@ chat-list-container,
 chat-list-items,
 #chatScrollableList,
 .infinite-conversations-scroll {
-  background: var(--slack-panel) !important;
   color: var(--slack-ink) !important;
 }
 
 chat-searcher-component > search-bar > div,
 chat-searcher-component search-bar > div,
 chat-list-container {
-  background: var(--slack-panel) !important;
   border-color: var(--slack-line) !important;
 }
 
@@ -906,12 +659,6 @@ chat-item {
 
 chat-item:hover {
   background: var(--slack-surface) !important;
-}
-
-chat-item.selected-tile {
-  background: var(--slack-aubergine-soft) !important;
-  border-color: #5a3b5d !important;
-  box-shadow: inset 3px 0 0 #cf8ed3 !important;
 }
 
 chat-item .last-sent,
@@ -980,11 +727,6 @@ chat-message file-preview > a {
   box-shadow: none !important;
 }
 
-#chat-form-controls .message-input-wrap:focus-within {
-  border-color: #cf8ed3 !important;
-  box-shadow: 0 0 0 3px rgba(207, 142, 211, 0.16) !important;
-}
-
 emoji-text-input,
 emoji-text-input .input-restriction,
 emoji-text-input .message-input {
@@ -995,7 +737,6 @@ emoji-text-input .message-input {
 #chat-form-controls .btn:hover,
 #chat-form-controls button:hover {
   background: var(--slack-surface) !important;
-  color: #cf8ed3 !important;
 }
 
 app-chat-info-panel,
@@ -1021,17 +762,6 @@ app-chat-info-panel .list-group-item {
 
 .dropdown-item {
   color: var(--slack-ink) !important;
-}
-
-.dropdown-item:hover,
-.dropdown-item:focus {
-  background: var(--slack-aubergine-soft) !important;
-}
-
-button:focus-visible,
-.btn:focus-visible,
-input:focus-visible {
-  outline-color: #cf8ed3 !important;
 }
 
 * {
@@ -1086,15 +816,11 @@ chat-message:has(> .message-name) > .message-name.message-right {
 }
 
 chat-message:has(> .message-name) > .message-outter-wrapper,
-chat-message:has(> .message-name)
-  > .message-outter-wrapper
-  > .message-inner {
+chat-message:has(> .message-name) > .message-outter-wrapper > .message-inner {
   display: contents !important;
 }
 
-chat-message:has(> .message-name)
-  .message-inner
-  > .dec-slack-message-avatar {
+chat-message:has(> .message-name) .message-inner > .dec-slack-message-avatar {
   grid-column: 1 !important;
   grid-row: 1 / 3 !important;
   align-self: start !important;
@@ -1117,9 +843,7 @@ chat-message:has(> .message-name) .message-inner > .message-text.new-sender {
   padding: 2px 8px !important;
 }
 
-chat-message:has(> .message-name)
-  .message-inner
-  > .message-title-time {
+chat-message:has(> .message-name) .message-inner > .message-title-time {
   grid-column: 3 !important;
   grid-row: 1 !important;
   align-self: center !important;
@@ -1151,21 +875,15 @@ chat-message:has(> .new-day-title):has(> .message-name) > .message-name {
   grid-row: 2 !important;
 }
 
-chat-message:has(> .new-day-title):has(> .message-name)
-  .message-inner
-  > .dec-slack-message-avatar {
+chat-message:has(> .new-day-title):has(> .message-name) .message-inner > .dec-slack-message-avatar {
   grid-row: 2 / 4 !important;
 }
 
-chat-message:has(> .new-day-title):has(> .message-name)
-  .message-inner
-  > .message-title-time {
+chat-message:has(> .new-day-title):has(> .message-name) .message-inner > .message-title-time {
   grid-row: 2 !important;
 }
 
-chat-message:has(> .new-day-title):has(> .message-name)
-  .message-inner
-  > .message-text {
+chat-message:has(> .new-day-title):has(> .message-name) .message-inner > .message-text {
   grid-row: 3 !important;
 }
 
@@ -1193,10 +911,8 @@ chat-message:not(:has(> .message-name)) {
   margin-block: 0 !important;
 }
 
-chat-message:not(:has(> .message-name))
-  .message-inner.message-left,
-chat-message:not(:has(> .message-name))
-  .message-inner.message-right {
+chat-message:not(:has(> .message-name)) .message-inner.message-left,
+chat-message:not(:has(> .message-name)) .message-inner.message-right {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
@@ -1252,15 +968,7 @@ chat-message.dec-slack-enter-own {
   }
 }
 
-/* ==========================================================
-   V5 — HEURES DANS LE FLUX + FOND PERSONNEL PLUS SUBTIL
-   ========================================================== */
-
-:root {
-  --slack-own-group: rgba(112, 76, 114, 0.12);
-  --slack-own-group-hover: rgba(112, 76, 114, 0.18);
-  --slack-own-border: rgba(207, 142, 211, 0.18);
-}
+/* HEURES DANS LE FLUX + FOND PERSONNEL PLUS SUBTIL */
 
 /* La règle V3, plus spécifique, conservait position:absolute.
    Cette règle de même spécificité la neutralise explicitement. */
@@ -1298,8 +1006,7 @@ chat-message:has(> .new-day-title):has(> .message-name)
 
 /* Dans une conversation à deux, le nom est un pseudo-élément CSS.
    On place donc avatar, pseudo-nom, heure et texte sur la même grille. */
-chat-message:not(:has(> .message-name))
-  .message-inner:has(> .message-text.new-sender) {
+chat-message:not(:has(> .message-name)) .message-inner:has(> .message-text.new-sender) {
   display: grid !important;
   grid-template-columns: 52px max-content minmax(0, 1fr) !important;
   grid-template-rows: auto auto !important;
@@ -1313,8 +1020,7 @@ chat-message:not(:has(> .message-name))
   padding: 5px 0 7px !important;
 }
 
-chat-message:not(:has(> .message-name))
-  .message-inner:has(> .message-text.new-sender)::before {
+chat-message:not(:has(> .message-name)) .message-inner:has(> .message-text.new-sender)::before {
   grid-column: 1 !important;
   grid-row: 1 / 3 !important;
   align-self: start !important;
@@ -1328,8 +1034,7 @@ chat-message:not(:has(> .message-name))
   transform: none !important;
 }
 
-chat-message:not(:has(> .message-name))
-  .message-inner:has(> .message-text.new-sender)::after {
+chat-message:not(:has(> .message-name)) .message-inner:has(> .message-text.new-sender)::after {
   grid-column: 2 !important;
   grid-row: 1 !important;
   align-self: center !important;
@@ -1414,24 +1119,19 @@ chat-message:has(> .message-name):has(.message-inner.message-right):hover {
 }
 
 @media (max-width: 900px) {
-  chat-message:not(:has(> .message-name))
-    .message-inner:has(> .message-text.new-sender) {
+  chat-message:not(:has(> .message-name)) .message-inner:has(> .message-text.new-sender) {
     grid-template-columns: 44px max-content minmax(0, 1fr) !important;
     max-width: calc(100% - 16px) !important;
     margin-right: 8px !important;
     margin-left: 8px !important;
   }
 
-  chat-message:not(:has(> .message-name))
-    .message-inner:has(> .message-text.new-sender)::after {
+  chat-message:not(:has(> .message-name)) .message-inner:has(> .message-text.new-sender)::after {
     max-width: 45vw !important;
   }
 }
 
-/* ==========================================================
-   V6 — VOIE D'ACTIONS AU SURVOL
-   Le dropdown 3CX reste proche du message sans recouvrir son texte.
-   ========================================================== */
+/* VOIE D'ACTIONS AU SURVOL */
 
 :root {
   --slack-message-action-gap: 10px;
@@ -1500,17 +1200,7 @@ chat-message .angular2-contextmenu > .dropdown-menu {
   }
 }
 
-/* ==========================================================
-   V7 — COLONNE DES CONVERSATIONS
-   Un seul ascenseur et une surface distincte du fil principal.
-   ========================================================== */
-
-:root {
-  --slack-conversation-list: #251f29;
-  --slack-conversation-list-header: #29232d;
-  --slack-conversation-list-line: #473a4b;
-  --slack-conversation-scrollbar: #6b5a70;
-}
+/* COLONNE DES CONVERSATIONS */
 
 /* Teinte continue sur toute la colonne, recherche comprise. */
 chat-searcher-component,
@@ -1584,10 +1274,7 @@ chat-list-items::-webkit-scrollbar {
   background-clip: padding-box !important;
 }
 
-/* ==========================================================
-   V8 — CONTRÔLES DE THÈME ET ALIGNEMENT
-   Classes et variables pilotées par le userscript v1.2.
-   ========================================================== */
+/* CONTRÔLES DE THÈME ET ALIGNEMENT */
 
 :root {
   --dec-accent: #4a154b;
@@ -1600,7 +1287,7 @@ chat-list-items::-webkit-scrollbar {
   --dec-accent-ring: rgba(74, 21, 75, 0.24);
   --dec-accent-own: rgba(74, 21, 75, 0.12);
   --dec-accent-own-hover: rgba(74, 21, 75, 0.18);
-  --dec-accent-own-border: rgba(74, 21, 75, 0.20);
+  --dec-accent-own-border: rgba(74, 21, 75, 0.2);
   --dec-on-accent: #ffffff;
 
   --slack-aubergine: var(--dec-accent) !important;
@@ -1614,14 +1301,10 @@ chat-list-items::-webkit-scrollbar {
   --bg-secondary-hover: var(--dec-accent-dark) !important;
   --bg-secondary-variant: var(--dec-accent-hover) !important;
 
-  --slack-conversation-list:
-    color-mix(in srgb, var(--dec-accent) 13%, #1a1d21) !important;
-  --slack-conversation-list-header:
-    color-mix(in srgb, var(--dec-accent) 17%, #1a1d21) !important;
-  --slack-conversation-list-line:
-    color-mix(in srgb, var(--dec-accent) 34%, #3a3d41) !important;
-  --slack-conversation-scrollbar:
-    color-mix(in srgb, var(--dec-accent) 38%, #72757b) !important;
+  --slack-conversation-list: color-mix(in srgb, var(--dec-accent) 13%, #1a1d21) !important;
+  --slack-conversation-list-header: color-mix(in srgb, var(--dec-accent) 17%, #1a1d21) !important;
+  --slack-conversation-list-line: color-mix(in srgb, var(--dec-accent) 34%, #3a3d41) !important;
+  --slack-conversation-scrollbar: color-mix(in srgb, var(--dec-accent) 38%, #72757b) !important;
 
   --bs-primary: var(--dec-accent) !important;
   --bs-primary-rgb: var(--dec-accent-rgb) !important;
@@ -1851,7 +1534,7 @@ input:focus-visible {
   width: 16px !important;
   height: 16px !important;
   background: var(--dec-accent) !important;
-  border: 2px solid rgba(255, 255, 255, 0.80) !important;
+  border: 2px solid rgba(255, 255, 255, 0.8) !important;
   border-radius: 4px !important;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28) !important;
 }
@@ -1881,14 +1564,10 @@ html.dec-slack-theme-light {
   --slack-hover: #f4f4f5 !important;
   --scrollbar: #b6b3b7 !important;
 
-  --slack-conversation-list:
-    color-mix(in srgb, var(--dec-accent) 7%, #ffffff) !important;
-  --slack-conversation-list-header:
-    color-mix(in srgb, var(--dec-accent) 10%, #ffffff) !important;
-  --slack-conversation-list-line:
-    color-mix(in srgb, var(--dec-accent) 22%, #dddddd) !important;
-  --slack-conversation-scrollbar:
-    color-mix(in srgb, var(--dec-accent) 25%, #a8a5a9) !important;
+  --slack-conversation-list: color-mix(in srgb, var(--dec-accent) 7%, #ffffff) !important;
+  --slack-conversation-list-header: color-mix(in srgb, var(--dec-accent) 10%, #ffffff) !important;
+  --slack-conversation-list-line: color-mix(in srgb, var(--dec-accent) 22%, #dddddd) !important;
+  --slack-conversation-scrollbar: color-mix(in srgb, var(--dec-accent) 25%, #a8a5a9) !important;
 }
 
 html.dec-slack-theme-light,
@@ -1944,27 +1623,19 @@ html.dec-slack-theme-light #dec-slack-controls {
 
 html.dec-slack-theme-light #dec-slack-notification-sound-menu {
   background: #ffffff !important;
-  box-shadow: 0 14px 38px rgba(29, 28, 29, 0.20) !important;
+  box-shadow: 0 14px 38px rgba(29, 28, 29, 0.2) !important;
 }
 
-html.dec-slack-theme-light
-  #dec-slack-controls
-  .dec-slack-control-button {
+html.dec-slack-theme-light #dec-slack-controls .dec-slack-control-button {
   color: var(--slack-ink) !important;
 }
 
-html.dec-slack-theme-light
-  #dec-slack-controls
-  .dec-slack-control-button:hover,
-html.dec-slack-theme-light
-  #dec-slack-controls
-  .dec-slack-control-button[data-active="true"] {
-  background: rgba(29, 28, 29, 0.10) !important;
+html.dec-slack-theme-light #dec-slack-controls .dec-slack-control-button:hover,
+html.dec-slack-theme-light #dec-slack-controls .dec-slack-control-button[data-active="true"] {
+  background: rgba(29, 28, 29, 0.1) !important;
 }
 
-html.dec-slack-theme-light
-  #dec-slack-controls
-  .dec-slack-color-swatch {
+html.dec-slack-theme-light #dec-slack-controls .dec-slack-color-swatch {
   border-color: rgba(255, 255, 255, 0.92) !important;
 }
 
@@ -2040,15 +1711,12 @@ html.dec-slack-layout-split
 }
 
 /* Conversation de groupe : nom, avatar, heure et contenu changent de côté. */
-html.dec-slack-layout-split
-  chat-message:has(> .message-name.message-right) {
+html.dec-slack-layout-split chat-message:has(> .message-name.message-right) {
   grid-template-columns: minmax(0, 1fr) max-content 52px !important;
   text-align: right !important;
 }
 
-html.dec-slack-layout-split
-  chat-message:has(> .message-name.message-right)
-  > .message-name {
+html.dec-slack-layout-split chat-message:has(> .message-name.message-right) > .message-name {
   grid-column: 2 !important;
   justify-self: end !important;
   text-align: right !important;
@@ -2093,25 +1761,13 @@ html.dec-slack-layout-split
   text-align: right !important;
 }
 
-html.dec-slack-layout-split
-  chat-message
-  .message-inner.message-right
-  .message-text,
-html.dec-slack-layout-split
-  chat-message
-  .message-inner.message-right
-  .message-text-internal {
+html.dec-slack-layout-split chat-message .message-inner.message-right .message-text,
+html.dec-slack-layout-split chat-message .message-inner.message-right .message-text-internal {
   margin-left: auto !important;
 }
 
-html.dec-slack-layout-split
-  chat-message
-  .message-inner.message-right
-  file-preview,
-html.dec-slack-layout-split
-  chat-message
-  .message-inner.message-right
-  preview-text-message {
+html.dec-slack-layout-split chat-message .message-inner.message-right file-preview,
+html.dec-slack-layout-split chat-message .message-inner.message-right preview-text-message {
   margin-left: auto !important;
 }
 
@@ -2138,15 +1794,12 @@ html.dec-slack-layout-split
     margin-right: 8px !important;
   }
 
-  html.dec-slack-layout-split
-    chat-message:has(> .message-name.message-right) {
+  html.dec-slack-layout-split chat-message:has(> .message-name.message-right) {
     grid-template-columns: minmax(0, 1fr) max-content 44px !important;
   }
 }
 
-/* ==========================================================
-   V9 — ESPACEMENT DES GROUPES ET TAILLE DES EMOJIS
-   ========================================================== */
+/* ESPACEMENT DES GROUPES ET TAILLE DES EMOJIS */
 
 /* Dernier message d'un groupe dans une conversation directe, ou dernière
    ligne d'un groupe de plusieurs messages : .message-inner possède une boîte. */
@@ -2154,10 +1807,8 @@ chat-message:not(:has(> .message-name)):has(+ chat-message .message-text.new-sen
   .message-inner.message-left,
 chat-message:not(:has(> .message-name)):has(+ chat-message .message-text.new-sender)
   .message-inner.message-right,
-chat-message:not(:has(> .message-name)):not(:has(+ chat-message))
-  .message-inner.message-left,
-chat-message:not(:has(> .message-name)):not(:has(+ chat-message))
-  .message-inner.message-right {
+chat-message:not(:has(> .message-name)):not(:has(+ chat-message)) .message-inner.message-left,
+chat-message:not(:has(> .message-name)):not(:has(+ chat-message)) .message-inner.message-right {
   margin-top: 0 !important;
   padding-bottom: 15px !important;
 }
@@ -2176,9 +1827,7 @@ chat-message:has(> .message-name):not(:has(+ chat-message)) {
   height: 16px !important;
 }
 
-/* ==========================================================
-   V10 — APERÇUS TRANSPARENTS, AVATARS ET BANDEAUX RÉTRACTABLES
-   ========================================================== */
+/* APERÇUS TRANSPARENTS, AVATARS ET BANDEAUX RÉTRACTABLES */
 
 /* Le lien qui enveloppe l'image avait son propre fond opaque : il apparaissait
    à travers les zones transparentes des PNG. */
@@ -2214,8 +1863,7 @@ html.dec-slack-search-collapsed chat-component > .layout-type4 {
   grid-template-rows: 0 minmax(0, 1fr) 0 !important;
 }
 
-html.dec-slack-search-collapsed
-  chat-searcher-component.layout-type4-header {
+html.dec-slack-search-collapsed chat-searcher-component.layout-type4-header {
   height: 0 !important;
   min-height: 0 !important;
   opacity: 0 !important;
@@ -2225,15 +1873,12 @@ html.dec-slack-search-collapsed
   border: 0 !important;
 }
 
-#dec-slack-controls
-  [data-dec-control="sound"][data-available="false"] {
+#dec-slack-controls [data-dec-control="sound"][data-available="false"] {
   opacity: 0.45 !important;
   cursor: help !important;
 }
 
-/* ==========================================================
-   V11 — APERÇUS D'IMAGES AJUSTÉS À LEUR CONTENU
-   ========================================================== */
+/* APERÇUS D'IMAGES AJUSTÉS À LEUR CONTENU */
 
 /* On ne modifie jamais les dimensions de img : 3CX les utilise pour produire
    la miniature. Seuls le composant et son cadre intermédiaire sont réduits. */
@@ -2270,9 +1915,7 @@ html.dec-slack-layout-split
   margin-left: auto !important;
 }
 
-/* ==========================================================
-   V12 — EN-TÊTE, AUTOCOMPLÉTION EMOJI ET NOTIFICATIONS 3CX
-   ========================================================== */
+/* EN-TÊTE, AUTOCOMPLÉTION EMOJI ET NOTIFICATIONS 3CX */
 
 /* L'en-tête reste toujours présent et n'occupe plus un bandeau opaque. */
 #chat-window {
@@ -2317,8 +1960,7 @@ chat-messages-header.dec-slack-conversation-header app-avatar {
   display: none !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  #showParticipants.dec-slack-conversation-title {
+chat-messages-header.dec-slack-conversation-header #showParticipants.dec-slack-conversation-title {
   position: relative !important;
   display: flex !important;
   align-items: center !important;
@@ -2332,10 +1974,7 @@ chat-messages-header.dec-slack-conversation-header
   padding: 8px 16px !important;
   overflow: hidden !important;
   color: var(--slack-ink) !important;
-  background: var(--dec-accent-soft) !important;
-  border: 1px solid var(--dec-accent-border) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+
   font-weight: 720 !important;
   line-height: 1.2 !important;
   text-align: center !important;
@@ -2358,8 +1997,7 @@ chat-messages-header.dec-slack-conversation-header
 }
 
 /* Cellule unique contenant inviter, archiver, appel, visio, etc. */
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-actions {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-actions {
   position: absolute !important;
   z-index: 4 !important;
   top: 50% !important;
@@ -2375,15 +2013,11 @@ chat-messages-header.dec-slack-conversation-header
   padding: 4px 6px !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
-  background: var(--dec-accent-soft) !important;
-  border: 1px solid var(--dec-accent-border) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16) !important;
+
   transform: translateY(-50%) !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-action {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-action {
   display: grid !important;
   place-items: center !important;
   box-sizing: border-box !important;
@@ -2399,8 +2033,7 @@ chat-messages-header.dec-slack-conversation-header
   box-shadow: none !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-action:hover {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-action:hover {
   color: var(--dec-accent-hover) !important;
   background: var(--dec-accent-ring) !important;
 }
@@ -2467,8 +2100,7 @@ chat-messages-header.dec-slack-conversation-header
   border-radius: 6px !important;
 }
 
-#dec-slack-emoji-autocomplete
-  .dec-slack-emoji-suggestion-literal-icon {
+#dec-slack-emoji-autocomplete .dec-slack-emoji-suggestion-literal-icon {
   grid-column: 1 !important;
   grid-row: 1 / 3 !important;
   display: grid !important;
@@ -2551,7 +2183,8 @@ chat-toast-component.dec-slack-chat-toast::after {
 chat-toast-component.dec-slack-chat-toast:is(:hover, :focus-visible) {
   background: var(--slack-surface) !important;
   border-color: var(--dec-accent-hover) !important;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.44),
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.44),
     0 0 0 3px var(--dec-accent-ring) !important;
   outline: 0 !important;
 }
@@ -2587,27 +2220,26 @@ chat-toast-component.dec-slack-chat-toast .dec-slack-chat-toast-close {
   border: 0 !important;
   border-radius: 50% !important;
   box-shadow: none !important;
-  font: 400 21px/1 "Segoe UI", sans-serif !important;
+  font:
+    400 21px/1 "Segoe UI",
+    sans-serif !important;
   cursor: pointer !important;
   pointer-events: auto !important;
   isolation: isolate !important;
 }
 
-chat-toast-component.dec-slack-chat-toast
-  .dec-slack-chat-toast-close:hover {
+chat-toast-component.dec-slack-chat-toast .dec-slack-chat-toast-close:hover {
   color: var(--slack-ink) !important;
   background: var(--dec-accent-ring) !important;
 }
 
-html.dec-slack-theme-light
-  chat-toast-component.dec-slack-chat-toast,
+html.dec-slack-theme-light chat-toast-component.dec-slack-chat-toast,
 html.dec-slack-theme-light #dec-slack-emoji-autocomplete {
   background: #ffffff !important;
-  box-shadow: 0 14px 38px rgba(29, 28, 29, 0.20) !important;
+  box-shadow: 0 14px 38px rgba(29, 28, 29, 0.2) !important;
 }
 
-html.dec-slack-theme-light
-  chat-toast-component.dec-slack-chat-toast::after {
+html.dec-slack-theme-light chat-toast-component.dec-slack-chat-toast::after {
   border-left-color: #ffffff !important;
 }
 
@@ -2619,15 +2251,12 @@ html.dec-slack-theme-light
     padding-left: 10px !important;
   }
 
-  chat-messages-header.dec-slack-conversation-header
-    .dec-slack-conversation-actions {
+  chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-actions {
     max-width: 46vw !important;
   }
 }
 
-/* ==========================================================
-   V13 — PILE DE NOTIFICATIONS ET EN-TÊTE SANS SÉPARATEURS
-   ========================================================== */
+/* PILE DE NOTIFICATIONS ET EN-TÊTE SANS SÉPARATEURS */
 
 /* Compatibilité avec les anciennes versions : la pile qui déplaçait les
    composants Angular est neutralisée. Le userscript empile maintenant les
@@ -2636,8 +2265,7 @@ html.dec-slack-theme-light
   display: none !important;
 }
 
-#dec-slack-chat-toast-stack
-  > chat-toast-component.dec-slack-chat-toast {
+#dec-slack-chat-toast-stack > chat-toast-component.dec-slack-chat-toast {
   display: none !important;
 }
 
@@ -2670,10 +2298,8 @@ chat-messages-header.dec-slack-conversation-header .header::after {
 
 /* Les deux seules surfaces opaques conservées sont la cellule du titre et la
    cellule d'actions explicitement créée à droite. */
-chat-messages-header.dec-slack-conversation-header
-  #showParticipants.dec-slack-conversation-title,
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-actions {
+chat-messages-header.dec-slack-conversation-header #showParticipants.dec-slack-conversation-title,
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-actions {
   background: var(--dec-accent-soft) !important;
   border: 1px solid var(--dec-accent-border) !important;
   border-radius: 14px !important;
@@ -2694,9 +2320,7 @@ chat-messages-header.dec-slack-conversation-header
   transform: translateY(-50%) !important;
 }
 
-/* ==========================================================
-   V14 — CORRECTIFS DES CONTRÔLES D'EN-TÊTE
-   ========================================================== */
+/* CORRECTIFS DES CONTRÔLES D'EN-TÊTE */
 
 /* Supprime l'ancien avatar injecté par 3CX autour du titre, y compris lorsque
    celui-ci est dessiné par un pseudo-élément plutôt que par app-avatar. */
@@ -2735,14 +2359,11 @@ chat-messages-header.dec-slack-conversation-header
   transform: none !important;
 }
 
-/* ==========================================================
-   V15 — TITRE RECONSTRUIT ET STATUT DU CONTACT
-   ========================================================== */
+/* TITRE RECONSTRUIT ET STATUT DU CONTACT */
 
 /* Le contrôle natif est entièrement masqué : son pseudo-avatar ne peut plus
    dépasser sur la gauche. La carte suivante relaie toujours son clic. */
-chat-messages-header.dec-slack-conversation-header
-  #showParticipants.dec-slack-native-title-hidden {
+chat-messages-header.dec-slack-conversation-header #showParticipants.dec-slack-native-title-hidden {
   display: none !important;
   width: 0 !important;
   min-width: 0 !important;
@@ -2756,9 +2377,7 @@ chat-messages-header.dec-slack-conversation-header
   pointer-events: none !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-card {
-  position: relative !important;
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-card {
   z-index: 3 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -2769,7 +2388,7 @@ chat-messages-header.dec-slack-conversation-header
   min-width: 0 !important;
   max-width: min(52vw, 520px) !important;
   min-height: 40px !important;
-  margin: 0 auto !important;
+
   padding: 7px 16px !important;
   overflow: hidden !important;
   color: var(--slack-ink) !important;
@@ -2782,23 +2401,19 @@ chat-messages-header.dec-slack-conversation-header
   cursor: pointer !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-card::before,
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-card::after {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-card::before,
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-card::after {
   content: none !important;
   display: none !important;
   background: none !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-card:hover {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-card:hover {
   background: var(--dec-accent-own-hover) !important;
   border-color: var(--dec-accent-hover) !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-name {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-name {
   display: block !important;
   max-width: 100% !important;
   overflow: hidden !important;
@@ -2810,8 +2425,7 @@ chat-messages-header.dec-slack-conversation-header
   white-space: nowrap !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-presence {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-presence {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2824,13 +2438,11 @@ chat-messages-header.dec-slack-conversation-header
   line-height: 14px !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-presence[hidden] {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-presence[hidden] {
   display: none !important;
 }
 
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-presence-dot {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-presence-dot {
   display: block !important;
   flex: 0 0 8px !important;
   width: 8px !important;
@@ -2883,14 +2495,11 @@ chat-messages-header.dec-slack-conversation-header
   box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.15) !important;
 }
 
-/* ==========================================================
-   V16 — CENTRAGE ABSOLU ET STATUT NATIF MASQUÉ
-   ========================================================== */
+/* CENTRAGE ABSOLU ET STATUT NATIF MASQUÉ */
 
 /* Le titre est centré par rapport à toute la largeur de la conversation,
    indépendamment de la largeur de la cellule d'actions située à droite. */
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-conversation-title-card {
+chat-messages-header.dec-slack-conversation-header .dec-slack-conversation-title-card {
   position: absolute !important;
   top: 50% !important;
   right: auto !important;
@@ -2902,8 +2511,7 @@ chat-messages-header.dec-slack-conversation-header
 
 /* 3CX conserve sa propre ligne de présence à gauche dans les conversations
    directes. Le userscript marque précisément ce nœud pour éviter le doublon. */
-chat-messages-header.dec-slack-conversation-header
-  .dec-slack-native-presence-hidden {
+chat-messages-header.dec-slack-conversation-header .dec-slack-native-presence-hidden {
   display: none !important;
   width: 0 !important;
   min-width: 0 !important;
@@ -2917,16 +2525,12 @@ chat-messages-header.dec-slack-conversation-header
   pointer-events: none !important;
 }
 
-/* ==========================================================
-   V17 — UN SEUL AVATAR DANS LES CONVERSATIONS DIRECTES
-   ========================================================== */
+/* UN SEUL AVATAR DANS LES CONVERSATIONS DIRECTES */
 
 /* Une fois l'avatar réel injecté par le userscript, le pseudo-avatar historique
    est désactivé avec une spécificité supérieure aux anciennes règles V5. */
 chat-message:not(:has(> .message-name))
-  .message-inner:has(> .message-text.new-sender):has(
-    > .dec-slack-message-avatar
-  )::before {
+  .message-inner:has(> .message-text.new-sender):has(> .dec-slack-message-avatar)::before {
   content: none !important;
   display: none !important;
   width: 0 !important;
@@ -2944,38 +2548,24 @@ chat-message:not(:has(> .message-name))
    ancienne couche avatar-content dans le bloc du message. */
 chat-message:not(:has(> .message-name))
   .message-inner:has(> .dec-slack-message-avatar)
-  > :is(app-avatar, .avatar-content, .avatar-contant):not(
-    .dec-slack-message-avatar
-  ) {
+  > :is(app-avatar, .avatar-content, .avatar-contant):not(.dec-slack-message-avatar) {
   display: none !important;
 }
 
-/* ==========================================================
-   V18 — ARRONDI DES AVATARS 3CX ET PASTILLES DE PRÉSENCE
-   ========================================================== */
+/* ARRONDI DES AVATARS 3CX ET PASTILLES DE PRÉSENCE */
 
 /* Équivalent stable du sélecteur Angular temporaire
    .avatar-size-m[_nghost-*] > .avatar-container[_ngcontent-*] > [_ngcontent-*].
    Il couvre l'avatar principal et la pastille de présence superposée. */
-:is(.avatar-size-s, .avatar-size-m, .avatar-size-l, app-avatar)
-  > .avatar-container
-  > *,
+:is(.avatar-size-s, .avatar-size-m, .avatar-size-l, app-avatar) > .avatar-container > *,
 chat-toast-component .avatar-container > *,
 chat-messages-header .avatar-container > *,
 [data-qa="profile-image"],
-:is(
-  .presence-dot,
-  .presence-indicator,
-  .status-dot,
-  .status-indicator,
-  [data-qa*="presence"]
-) {
+:is(.presence-dot, .presence-indicator, .status-dot, .status-indicator, [data-qa*="presence"]) {
   border-radius: 10px !important;
 }
 
-/* ==========================================================
-   V19 — ACCUSÉ DE LECTURE UNIQUE ET PORTRAIT DU CONTACT
-   ========================================================== */
+/* ACCUSÉ DE LECTURE UNIQUE ET PORTRAIT DU CONTACT */
 
 /* Seuls les anciens doubles checks « lus » sont redondants. Les checks simples
    « envoyés » restent visibles jusqu'à leur passage à l'état lu. */
@@ -2991,8 +2581,7 @@ chat-message.dec-slack-latest-read {
    un portrait injecté dans le wrapper pleine largeur. Ce conteneur est un bloc
    explicite dans Chrome comme dans Firefox, contrairement au composant Angular
    chat-message dont le bloc de positionnement dépend du moteur de rendu. */
-chat-message.dec-slack-latest-read
-  delivered-check.dec-slack-native-read-hidden {
+chat-message.dec-slack-latest-read delivered-check.dec-slack-native-read-hidden {
   display: none !important;
 }
 
@@ -3009,8 +2598,7 @@ chat-message .message-outter-wrapper:has(> delivered-check.dec-slack-sent-receip
 
 /* Copie visuelle du check simple natif, déplacée hors de la bulle afin que son
    bord droit soit le même que celui du portrait « lu ». */
-chat-message
-  > delivered-check.dec-slack-sent-receipt-copy[data-dec-created="true"],
+chat-message > delivered-check.dec-slack-sent-receipt-copy[data-dec-created="true"],
 chat-message
   .message-outter-wrapper
   > delivered-check.dec-slack-sent-receipt-copy[data-dec-created="true"] {
@@ -3038,8 +2626,7 @@ chat-message
   pointer-events: none !important;
 }
 
-chat-message.dec-slack-latest-read
-  .message-outter-wrapper {
+chat-message.dec-slack-latest-read .message-outter-wrapper {
   position: relative !important;
   width: 100% !important;
   overflow: visible !important;
@@ -3048,8 +2635,7 @@ chat-message.dec-slack-latest-read
 chat-message.dec-slack-latest-read
   .message-outter-wrapper
   > .dec-slack-read-avatar[data-dec-created="true"],
-chat-message.dec-slack-latest-read
-  > .dec-slack-read-avatar[data-dec-created="true"] {
+chat-message.dec-slack-latest-read > .dec-slack-read-avatar[data-dec-created="true"] {
   position: absolute !important;
   z-index: 8 !important;
   top: auto !important;
@@ -3079,9 +2665,7 @@ chat-message.dec-slack-latest-read
   pointer-events: none !important;
 }
 
-/* ==========================================================
-   V20 — INDICATEUR D'ÉCRITURE AVEC AVATARS
-   ========================================================== */
+/* INDICATEUR D'ÉCRITURE AVEC AVATARS */
 
 /* La ligne textuelle native de 3CX est remplacée par le rendu placé sous le
    fil de discussion. Le userscript ne marque que son nœud le plus précis. */
@@ -3209,7 +2793,7 @@ chat-message.dec-slack-latest-read
   }
 }
 
-/* UI SEPTEMBRE 2026 — 2.0.0-beta.5
+/* Interface de septembre 2026 — app-layout-type4
    Activée par le userscript uniquement sur app-layout-type4.
    Les conteneurs et commandes Angular restent dans leur parent natif. */
 html.dec-slack-ui-v2 {
@@ -3235,7 +2819,9 @@ html.dec-slack-ui-v2 [layout-type4-header] {
   background: var(--slack-conversation-list-header) !important;
   border-bottom: 1px solid var(--slack-line) !important;
 }
-html.dec-slack-ui-v2.dec-slack-search-collapsed [layout-type4-header] { display: none !important; }
+html.dec-slack-ui-v2.dec-slack-search-collapsed [layout-type4-header] {
+  display: none !important;
+}
 html.dec-slack-ui-v2 [layout-type4-nav] {
   grid-area: 2 / 1 !important;
   min-height: 0 !important;
@@ -3257,7 +2843,10 @@ html.dec-slack-ui-v2 :is(app-chat-messages-root, app-chat-messages) {
   min-height: 0 !important;
   flex: 1 1 auto !important;
 }
-html.dec-slack-ui-v2 .chat-massages-main { min-height: 0 !important; position: relative !important; }
+html.dec-slack-ui-v2 .chat-massages-main {
+  min-height: 0 !important;
+  position: relative !important;
+}
 html.dec-slack-ui-v2 .chat-massages-main > .scrollable {
   overflow-y: auto !important;
   overflow-x: hidden !important;
@@ -3275,9 +2864,15 @@ html.dec-slack-ui-v2 chat-item:is(.selected, :hover) {
   background: var(--dec-accent-soft) !important;
   border-color: var(--dec-accent-border) !important;
 }
-html.dec-slack-ui-v2 chat-item :is([data-qa='last-sent'], [data-qa='message-text']) { color: var(--slack-muted) !important; }
-html.dec-slack-ui-v2 chat-item .chat-content { min-width: 0 !important; }
-html.dec-slack-ui-v2 chat-item .avatar-content { border-radius: 50% !important; }
+html.dec-slack-ui-v2 chat-item :is([data-qa="last-sent"], [data-qa="message-text"]) {
+  color: var(--slack-muted) !important;
+}
+html.dec-slack-ui-v2 chat-item .chat-content {
+  min-width: 0 !important;
+}
+html.dec-slack-ui-v2 chat-item .avatar-content {
+  border-radius: 50% !important;
+}
 
 html.dec-slack-ui-v2 chat-messages-header.dec-v2-header {
   position: relative !important;
@@ -3293,7 +2888,10 @@ html.dec-slack-ui-v2 chat-messages-header.dec-v2-header {
   box-shadow: none !important;
 }
 html.dec-slack-ui-v2 .dec-v2-header::before,
-html.dec-slack-ui-v2 .dec-v2-header::after { display: none !important; content: none !important; }
+html.dec-slack-ui-v2 .dec-v2-header::after {
+  display: none !important;
+  content: none !important;
+}
 html.dec-slack-ui-v2 .dec-v2-native-identity {
   position: absolute !important;
   width: 1px !important;
@@ -3312,14 +2910,48 @@ html.dec-slack-ui-v2 .dec-v2-actions {
   margin: 0 !important;
   min-width: 0 !important;
 }
-html.dec-slack-ui-v2 .dec-v2-title-card { grid-area: 1 / 2 !important; text-align: center !important; cursor: pointer !important; }
-html.dec-slack-ui-v2 .dec-v2-title { display: block !important; font-weight: 700 !important; color: var(--slack-ink) !important; }
-html.dec-slack-ui-v2 .dec-v2-presence { display: flex !important; flex-direction: row-reverse !important; justify-content: center !important; align-items: center !important; gap: 5px !important; font-size: 11px !important; margin-top: 3px !important; }
-html.dec-slack-ui-v2 .dec-v2-presence-label { color: var(--slack-muted) !important; }
-html.dec-slack-ui-v2 .dec-v2-presence-dot { width: 8px !important; height: 8px !important; border-radius: 50% !important; flex: 0 0 8px !important; }
-html.dec-slack-ui-v2 :is(.dec-v2-presence, .dec-v2-presence-dot)[hidden] { display: none !important; }
-html.dec-slack-ui-v2 .dec-v2-actions { grid-area: 1 / 3 !important; justify-self: end !important; display: flex !important; flex-wrap: wrap !important; justify-content: flex-end !important; padding: 4px !important; }
-html.dec-slack-ui-v2 .dec-v2-actions .btn { color: var(--slack-ink) !important; }
+html.dec-slack-ui-v2 .dec-v2-title-card {
+  grid-area: 1 / 2 !important;
+  text-align: center !important;
+  cursor: pointer !important;
+}
+html.dec-slack-ui-v2 .dec-v2-title {
+  display: block !important;
+  font-weight: 700 !important;
+  color: var(--slack-ink) !important;
+}
+html.dec-slack-ui-v2 .dec-v2-presence {
+  display: flex !important;
+  flex-direction: row-reverse !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-size: 11px !important;
+  margin-top: 3px !important;
+}
+html.dec-slack-ui-v2 .dec-v2-presence-label {
+  color: var(--slack-muted) !important;
+}
+html.dec-slack-ui-v2 .dec-v2-presence-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  flex: 0 0 8px !important;
+}
+html.dec-slack-ui-v2 :is(.dec-v2-presence, .dec-v2-presence-dot)[hidden] {
+  display: none !important;
+}
+html.dec-slack-ui-v2 .dec-v2-actions {
+  grid-area: 1 / 3 !important;
+  justify-self: end !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+  padding: 4px !important;
+}
+html.dec-slack-ui-v2 .dec-v2-actions .btn {
+  color: var(--slack-ink) !important;
+}
 
 html.dec-slack-ui-v2 chat-message.dec-v2-message {
   position: relative !important;
@@ -3329,14 +2961,24 @@ html.dec-slack-ui-v2 chat-message.dec-v2-message {
   margin: 0 !important;
   padding: 2px 42px 2px 54px !important;
   color: var(--slack-ink) !important;
-  background: transparent !important;
+
   border: 0 !important;
   text-align: left !important;
 }
-html.dec-slack-ui-v2 chat-message.dec-v2-own { background: var(--dec-accent-own) !important; }
-html.dec-slack-ui-v2 chat-message.dec-v2-group-start { padding-top: 6px !important; border-radius: 8px 8px 0 0 !important; }
-html.dec-slack-ui-v2 chat-message.dec-v2-group-end { padding-bottom: 15px !important; border-radius: 0 0 8px 8px !important; }
-html.dec-slack-ui-v2 .dec-v2-message :is(.message-row, .message-align, .message-layout, .message-content) {
+html.dec-slack-ui-v2 chat-message.dec-v2-own {
+  background: var(--dec-accent-own) !important;
+}
+html.dec-slack-ui-v2 chat-message.dec-v2-group-start {
+  padding-top: 6px !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+html.dec-slack-ui-v2 chat-message.dec-v2-group-end {
+  padding-bottom: 15px !important;
+  border-radius: 0 0 8px 8px !important;
+}
+html.dec-slack-ui-v2
+  .dec-v2-message
+  :is(.message-row, .message-align, .message-layout, .message-content) {
   position: static !important;
   inset: auto !important;
   float: none !important;
@@ -3354,7 +2996,10 @@ html.dec-slack-ui-v2 .dec-v2-message :is(.message-row, .message-align, .message-
   text-align: inherit !important;
 }
 html.dec-slack-ui-v2 .dec-v2-message .message-content::before,
-html.dec-slack-ui-v2 .dec-v2-message .message-content::after { content: none !important; display: none !important; }
+html.dec-slack-ui-v2 .dec-v2-message .message-content::after {
+  content: none !important;
+  display: none !important;
+}
 html.dec-slack-ui-v2 .dec-v2-message-heading {
   display: flex !important;
   position: static !important;
@@ -3363,70 +3008,279 @@ html.dec-slack-ui-v2 .dec-v2-message-heading {
   margin: 0 0 3px !important;
 }
 /* Le titre injecté est dernier dans le DOM, premier visuellement. */
-html.dec-slack-ui-v2 .dec-v2-message.dec-v2-group-start.dec-v2-has-author { display: flex !important; flex-direction: column !important; }
-html.dec-slack-ui-v2 .dec-v2-message-heading { order: -1 !important; }
-html.dec-slack-ui-v2 .dec-v2-author { font-size: 14px !important; font-weight: 700 !important; }
-html.dec-slack-ui-v2 .dec-v2-time { font-size: 11px !important; color: var(--slack-muted) !important; }
+html.dec-slack-ui-v2 .dec-v2-message.dec-v2-group-start.dec-v2-has-author {
+  display: flex !important;
+  flex-direction: column !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message-heading {
+  order: -1 !important;
+}
+html.dec-slack-ui-v2 .dec-v2-author {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+}
+html.dec-slack-ui-v2 .dec-v2-time {
+  font-size: 11px !important;
+  color: var(--slack-muted) !important;
+}
 html.dec-slack-ui-v2 .dec-v2-message-avatar {
-  position: absolute !important; top: 6px !important; left: 10px !important;
-  width: 34px !important; height: 34px !important; display: grid !important;
-  place-items: center !important; border-radius: 8px !important;
-  background-position: center !important; background-size: cover !important;
-  color: white !important; font-size: 12px !important; overflow: hidden !important;
+  position: absolute !important;
+  top: 6px !important;
+  left: 10px !important;
+  width: 34px !important;
+  height: 34px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 8px !important;
+  background-position: center !important;
+  background-size: cover !important;
+  color: white !important;
+  font-size: 12px !important;
+  overflow: hidden !important;
 }
-html.dec-slack-ui-v2 .dec-v2-has-author .message-row > app-avatar { display: none !important; }
-html.dec-slack-ui-v2 .dec-v2-group-start.dec-v2-has-author .message-data small { display: none !important; }
-html.dec-slack-ui-v2 .message-data { background: transparent !important; position: static !important; padding: 0 !important; min-height: 0 !important; }
-html.dec-slack-ui-v2 .message-data small { color: var(--slack-muted) !important; font-size: 10px !important; }
-html.dec-slack-ui-v2 .dec-v2-message app-chat-message-text { display: block !important; text-align: inherit !important; white-space: pre-wrap !important; overflow-wrap: anywhere !important; font-size: 14px !important; line-height: 1.5 !important; }
-html.dec-slack-ui-v2 .dec-v2-message app-chat-message-text > span { display: inline !important; }
-html.dec-slack-ui-v2 .dec-v2-message .emoji { width: 16px !important; height: 16px !important; }
-html.dec-slack-ui-v2 .dec-v2-message img.dec-slack-custom-emoji { display: inline-block !important; width: 32px !important; height: 32px !important; object-fit: contain !important; vertical-align: middle !important; background: transparent !important; }
-html.dec-slack-ui-v2 app-chat-message-file-preview { display: inline-block !important; width: fit-content !important; max-width: 100% !important; background: transparent !important; border: 0 !important; border-radius: 8px !important; overflow: visible !important; }
-html.dec-slack-ui-v2 app-chat-message-file-preview > img { display: block !important; width: auto !important; height: auto !important; max-width: min(320px, 100%) !important; max-height: 220px !important; object-fit: contain !important; background: transparent !important; border-radius: 8px !important; }
-html.dec-slack-ui-v2 app-chat-message-file { display: inline-block !important; max-width: min(420px, 100%) !important; background: var(--slack-panel) !important; border: 1px solid var(--slack-line) !important; border-radius: 10px !important; padding: 10px !important; }
+html.dec-slack-ui-v2 .dec-v2-has-author .message-row > app-avatar {
+  display: none !important;
+}
+html.dec-slack-ui-v2 .dec-v2-group-start.dec-v2-has-author .message-data small {
+  display: none !important;
+}
+html.dec-slack-ui-v2 .message-data {
+  background: transparent !important;
+  position: static !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+}
+html.dec-slack-ui-v2 .message-data small {
+  color: var(--slack-muted) !important;
+  font-size: 10px !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message app-chat-message-text {
+  display: block !important;
+  text-align: inherit !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message app-chat-message-text > span {
+  display: inline !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message .emoji {
+  width: 16px !important;
+  height: 16px !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message img.dec-slack-custom-emoji {
+  display: inline-block !important;
+  object-fit: contain !important;
+  vertical-align: middle !important;
+  background: transparent !important;
+}
+html.dec-slack-ui-v2 app-chat-message-file-preview {
+  display: inline-block !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  overflow: visible !important;
+}
+html.dec-slack-ui-v2 app-chat-message-file-preview > img {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: min(320px, 100%) !important;
+  max-height: 220px !important;
+  object-fit: contain !important;
+  background: transparent !important;
+  border-radius: 8px !important;
+}
+html.dec-slack-ui-v2 app-chat-message-file {
+  display: inline-block !important;
+  max-width: min(420px, 100%) !important;
+  background: var(--slack-panel) !important;
+  border: 1px solid var(--slack-line) !important;
+  border-radius: 10px !important;
+  padding: 10px !important;
+}
 html.dec-slack-ui-v2 .dec-v2-message .message-actions {
-  position: absolute !important; top: 0 !important; right: 2px !important; left: auto !important; bottom: auto !important;
-  display: flex !important; flex-direction: column !important; gap: 1px !important;
-  width: 30px !important; margin: 0 !important; padding: 0 !important;
-  background: var(--slack-panel) !important; border-radius: 7px !important; z-index: 5 !important;
-  opacity: 0 !important; pointer-events: none !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 2px !important;
+  left: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+  width: 30px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: var(--slack-panel) !important;
+  border-radius: 7px !important;
+  z-index: 5 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
-html.dec-slack-ui-v2 .dec-v2-message:is(:hover, :focus-within) .message-actions { opacity: 1 !important; pointer-events: auto !important; }
-html.dec-slack-ui-v2 .message-actions .btn { width: 28px !important; height: 28px !important; min-width: 0 !important; padding: 4px !important; }
-html.dec-slack-ui-v2 .dec-v2-message delivered-check { position: absolute !important; right: 8px !important; bottom: 0 !important; top: auto !important; left: auto !important; width: 14px !important; height: 14px !important; color: var(--slack-muted) !important; pointer-events: none !important; }
-html.dec-slack-ui-v2 delivered-check :is(svg, lucide-icon) { width: 14px !important; height: 14px !important; }
-html.dec-slack-ui-v2 delivered-check.dec-v2-receipt-hidden { display: none !important; }
-html.dec-slack-ui-v2 .dec-v2-read-avatar { position: absolute !important; right: 8px !important; bottom: 0 !important; width: 14px !important; height: 14px !important; border-radius: 5px !important; background-size: cover !important; background-position: center !important; font-size: 7px !important; color: white !important; text-align: center !important; }
-html.dec-slack-ui-v2.dec-slack-layout-split .dec-v2-message.dec-v2-own { padding-left: 42px !important; padding-right: 54px !important; text-align: right !important; }
-html.dec-slack-ui-v2.dec-slack-layout-split .dec-v2-own .dec-v2-message-heading { flex-direction: row-reverse !important; }
-html.dec-slack-ui-v2.dec-slack-layout-split .dec-v2-own .dec-v2-message-avatar { left: auto !important; right: 10px !important; }
-html.dec-slack-ui-v2.dec-slack-layout-split .dec-v2-own .message-actions { right: auto !important; left: 2px !important; }
-html.dec-slack-ui-v2 .day-title { display: flex !important; align-items: center !important; gap: 12px !important; color: var(--slack-muted) !important; background: transparent !important; margin: 14px 0 !important; font-size: 12px !important; }
-html.dec-slack-ui-v2 .day-title hr { flex: 1 !important; border-color: var(--slack-line) !important; }
-html.dec-slack-ui-v2 app-chat-message-input { display: flex !important; align-items: center !important; flex: 0 0 auto !important; gap: 6px !important; padding: 10px !important; color: var(--slack-ink) !important; background: var(--slack-panel) !important; border-color: var(--slack-line) !important; }
-html.dec-slack-ui-v2 app-chat-message-input emoji-text-input { position: relative !important; flex: 1 1 auto !important; min-width: 0 !important; }
-html.dec-slack-ui-v2 app-chat-message-input .message-input { min-height: 42px !important; max-height: 180px !important; overflow-y: auto !important; padding: 10px !important; background: var(--slack-surface) !important; color: var(--slack-ink) !important; border: 1px solid var(--slack-line) !important; border-radius: 10px !important; }
-html.dec-slack-ui-v2 app-chat-message-input .placeholder { color: var(--slack-muted) !important; pointer-events: none !important; }
-html.dec-slack-ui-v2 app-chat-message-input .inside-input-btn { position: static !important; transform: none !important; margin: 0 !important; flex: 0 0 auto !important; }
-html.dec-slack-ui-v2 app-chat-message-input .btn { color: var(--slack-ink) !important; }
-html.dec-slack-ui-v2 app-chat-message-input [data-qa='send-message'] { background: var(--dec-accent) !important; color: var(--dec-on-accent) !important; }
-html.dec-slack-ui-v2 :is(search-bar input, .emoji-mart, .emoji-mart-search input) { background: var(--slack-panel) !important; color: var(--slack-ink) !important; border-color: var(--slack-line) !important; }
-html.dec-slack-ui-v2 #dec-slack-typing-indicator { text-align: left !important; padding-left: 0 !important; background: var(--slack-canvas) !important; }
+html.dec-slack-ui-v2 .dec-v2-message:is(:hover, :focus-within) .message-actions {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+html.dec-slack-ui-v2 .message-actions .btn {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 0 !important;
+  padding: 4px !important;
+}
+html.dec-slack-ui-v2 .dec-v2-message delivered-check {
+  position: absolute !important;
+  right: 8px !important;
+  bottom: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--slack-muted) !important;
+  pointer-events: none !important;
+}
+html.dec-slack-ui-v2 delivered-check :is(svg, lucide-icon) {
+  width: 14px !important;
+  height: 14px !important;
+}
+html.dec-slack-ui-v2 delivered-check.dec-v2-receipt-hidden {
+  display: none !important;
+}
+html.dec-slack-ui-v2 .dec-v2-read-avatar {
+  position: absolute !important;
+  right: 8px !important;
+  bottom: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 5px !important;
+  background-size: cover !important;
+  background-position: center !important;
+  font-size: 7px !important;
+  color: white !important;
+  text-align: center !important;
+}
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message.dec-v2-message:has(.message-align.sent-by-me) {
+  padding-left: 42px !important;
+  padding-right: 54px !important;
+}
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message:has(.message-align.sent-by-me)
+  > .dec-v2-message-heading {
+  flex-direction: row-reverse !important;
+}
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message:has(.message-align.sent-by-me)
+  > .dec-v2-message-avatar {
+  left: auto !important;
+  right: 10px !important;
+}
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message:has(.message-align.sent-by-me)
+  .message-actions {
+  right: auto !important;
+  left: 2px !important;
+}
+html.dec-slack-ui-v2 .day-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  color: var(--slack-muted) !important;
+  background: transparent !important;
+  margin: 14px 0 !important;
+  font-size: 12px !important;
+}
+html.dec-slack-ui-v2 .day-title hr {
+  flex: 1 !important;
+  border-color: var(--slack-line) !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input {
+  display: flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  gap: 6px !important;
+  padding: 10px !important;
+  color: var(--slack-ink) !important;
+  background: var(--slack-panel) !important;
+  border-color: var(--slack-line) !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input emoji-text-input {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input .message-input {
+  min-height: 42px !important;
+  max-height: 180px !important;
+  overflow-y: auto !important;
+  padding: 10px !important;
+  background: var(--slack-surface) !important;
+  color: var(--slack-ink) !important;
+  border: 1px solid var(--slack-line) !important;
+  border-radius: 10px !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input .placeholder {
+  color: var(--slack-muted) !important;
+  pointer-events: none !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input .inside-input-btn {
+  position: static !important;
+  transform: none !important;
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input .btn {
+  color: var(--slack-ink) !important;
+}
+html.dec-slack-ui-v2 app-chat-message-input [data-qa="send-message"] {
+  background: var(--dec-accent) !important;
+  color: var(--dec-on-accent) !important;
+}
+html.dec-slack-ui-v2 :is(search-bar input, .emoji-mart, .emoji-mart-search input) {
+  background: var(--slack-panel) !important;
+  color: var(--slack-ink) !important;
+  border-color: var(--slack-line) !important;
+}
+/* Une place fixe hors de la liste : l'écriture ne redimensionne aucun message
+   et ne change pas le dernier enfant attendu par le défilement natif. */
+html.dec-slack-ui-v2 #dec-slack-typing-indicator {
+  display: flex !important;
+  flex: 0 0 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  margin: 0 !important;
+  padding: 4px 16px !important;
+  text-align: left !important;
+  background: var(--slack-canvas) !important;
+}
+html.dec-slack-ui-v2 #dec-slack-typing-indicator[hidden] {
+  display: flex !important;
+  visibility: hidden !important;
+}
 @media (max-width: 900px) {
-  html.dec-slack-ui-v2 .dec-v2-actions { grid-area: 2 / 1 / 3 / -1 !important; }
+  html.dec-slack-ui-v2 .dec-v2-actions {
+    grid-area: 2 / 1 / 3 / -1 !important;
+  }
 }
 @media (max-width: 767px) {
-  html.dec-slack-ui-v2 app-layout-type4 { grid-template-columns: minmax(0, 1fr) !important; }
-  html.dec-slack-ui-v2 [layout-type4-content] { grid-area: 2 / 1 !important; }
-  html.dec-slack-ui-v2 app-layout-type4:has(app-chat-messages) [layout-type4-nav] { display: none !important; }
-  html.dec-slack-ui-v2 app-layout-type4:not(:has(app-chat-messages)) [layout-type4-content] { display: none !important; }
+  html.dec-slack-ui-v2 app-layout-type4 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  html.dec-slack-ui-v2 [layout-type4-content] {
+    grid-area: 2 / 1 !important;
+  }
+  html.dec-slack-ui-v2 app-layout-type4:has(app-chat-messages) [layout-type4-nav] {
+    display: none !important;
+  }
+  html.dec-slack-ui-v2 app-layout-type4:not(:has(app-chat-messages)) [layout-type4-content] {
+    display: none !important;
+  }
 }
 
 /* UI SEPTEMBRE 2026 — complément groupe, notifications et heures au survol. */
-html.dec-slack-ui-v2
-  .dec-v2-message.dec-v2-has-author
-  > .dec-v2-native-sender-row {
+html.dec-slack-ui-v2 .dec-v2-message.dec-v2-has-author > .dec-v2-native-sender-row {
   display: none !important;
 }
 
@@ -3446,11 +3300,6 @@ html.dec-slack-ui-v2
 
 /* Le premier message d'un groupe utilise l'heure accolée au nom ; son heure
    native reste masquée pour éviter un doublon au survol. */
-html.dec-slack-ui-v2
-  .dec-v2-message.dec-v2-group-start.dec-v2-has-author
-  .message-data small {
-  display: none !important;
-}
 
 html.dec-slack-ui-v2 app-chat-info-panel {
   min-width: min(330px, 34vw) !important;
@@ -3471,9 +3320,7 @@ html.dec-slack-ui-v2 app-chat-info-panel [data-qa="chat-participant"] {
   border-radius: 10px !important;
 }
 
-html.dec-slack-ui-v2
-  app-chat-info-panel
-  [data-qa="chat-participant"]:hover {
+html.dec-slack-ui-v2 app-chat-info-panel [data-qa="chat-participant"]:hover {
   background: var(--dec-accent-soft) !important;
   border-color: var(--dec-accent-border) !important;
 }
@@ -3482,10 +3329,7 @@ html.dec-slack-ui-v2 app-chat-info-panel [data-qa="status"] {
   color: var(--slack-muted) !important;
 }
 
-html.dec-slack-ui-v2
-  app-chat-info-panel
-  [data-qa="chat-participant"]
-  [data-qa="profile-image"] {
+html.dec-slack-ui-v2 app-chat-info-panel [data-qa="chat-participant"] [data-qa="profile-image"] {
   border-radius: 10px !important;
 }
 
@@ -3506,9 +3350,7 @@ html.dec-slack-ui-v2 chat-toast-container {
   pointer-events: none !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-container
-  > [data-qa="chat-toasts"] {
+html.dec-slack-ui-v2 chat-toast-container > [data-qa="chat-toasts"] {
   position: static !important;
   display: flex !important;
   flex-direction: column !important;
@@ -3525,15 +3367,11 @@ html.dec-slack-ui-v2
   pointer-events: none !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-container
-  [data-qa="close-all"] {
+html.dec-slack-ui-v2 chat-toast-container [data-qa="close-all"] {
   display: none !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-container
-  chat-toast-component.dec-slack-chat-toast {
+html.dec-slack-ui-v2 chat-toast-container chat-toast-component.dec-slack-chat-toast {
   position: relative !important;
   inset: auto !important;
   flex: 0 0 auto !important;
@@ -3545,18 +3383,14 @@ html.dec-slack-ui-v2
   pointer-events: auto !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-component.dec-slack-chat-toast
-  > .chat-content {
+html.dec-slack-ui-v2 chat-toast-component.dec-slack-chat-toast > .chat-content {
   display: flex !important;
   align-items: flex-start !important;
   gap: 10px !important;
   padding: 0 !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-component.dec-slack-chat-toast
-  app-avatar {
+html.dec-slack-ui-v2 chat-toast-component.dec-slack-chat-toast app-avatar {
   flex: 0 0 38px !important;
   width: 38px !important;
   height: 38px !important;
@@ -3569,16 +3403,12 @@ html.dec-slack-ui-v2
   border-radius: 10px !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-component.dec-slack-chat-toast
-  [data-qa="sender"] {
+html.dec-slack-ui-v2 chat-toast-component.dec-slack-chat-toast [data-qa="sender"] {
   color: var(--slack-ink) !important;
   font-weight: 700 !important;
 }
 
-html.dec-slack-ui-v2
-  chat-toast-component.dec-slack-chat-toast
-  [data-qa="message-text"] {
+html.dec-slack-ui-v2 chat-toast-component.dec-slack-chat-toast [data-qa="message-text"] {
   color: var(--slack-muted) !important;
   line-height: 1.35 !important;
 }
@@ -3614,13 +3444,11 @@ html.dec-slack-ui-v2 chat-message.dec-v2-message:hover {
   background: var(--slack-hover) !important;
 }
 
-html.dec-slack-ui-v2
-  chat-message.dec-v2-message:has(.message-align.sent-by-me) {
+html.dec-slack-ui-v2 chat-message.dec-v2-message:has(.message-align.sent-by-me) {
   background: var(--dec-accent-own) !important;
 }
 
-html.dec-slack-ui-v2
-  chat-message.dec-v2-message:has(.message-align.sent-by-me):hover {
+html.dec-slack-ui-v2 chat-message.dec-v2-message:has(.message-align.sent-by-me):hover {
   background: var(--dec-accent-own-hover) !important;
 }
 
@@ -3632,17 +3460,48 @@ html.dec-slack-ui-v2
   background: transparent !important;
 }
 
-/* La navigation principale conserve la colonne colorée, sans rectangles noirs
-   sous les boutons Équipe, Appels, Chat, Panneau, etc. */
+/* Fond transparent au repos ; sélection et survol restent visibles. */
 html.dec-slack-ui-v2 app-nav .nav-item,
 html.dec-slack-ui-v2 app-nav .nav-item > :is(a, button) {
   background: transparent !important;
   box-shadow: none !important;
 }
+html.dec-slack-ui-v2 app-nav .nav-item > :is(a, button):hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+html.dec-slack-ui-v2 app-nav .nav-item > :is(a, button).active {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
 
+/* L'auteur vient du marqueur natif, jamais de l'état de survol. On fixe
+   l'alignement sur chaque conteneur, y compris ceux portant des styles 3CX. */
+html.dec-slack-ui-v2.dec-slack-layout-split chat-message.dec-v2-message,
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message.dec-v2-message
+  :is(.message-row, .message-align, .message-layout, .message-content, app-chat-message-text) {
+  text-align: left !important;
+}
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message.dec-v2-message:has(.message-align.sent-by-me),
+html.dec-slack-ui-v2.dec-slack-layout-split
+  chat-message.dec-v2-message:has(.message-align.sent-by-me)
+  :is(.message-row, .message-align, .message-layout, .message-content, app-chat-message-text) {
+  text-align: right !important;
+}
+
+/* 3CX laisse justify-items:flex-start sur .message-align. Après son passage
+   en display:block, le bloc suivant se rétrécit à son contenu et reste à
+   gauche malgré text-align:right. Les wrappers occupent tout l'espace utile. */
 html.dec-slack-ui-v2
-  .dec-v2-message
-  .message-data small {
+  chat-message.dec-v2-message
+  :is(.message-row, .message-align, .message-layout, .message-content, app-chat-message-text) {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  justify-items: normal !important;
+  justify-self: stretch !important;
+}
+
+html.dec-slack-ui-v2 .dec-v2-message .message-data small {
   position: absolute !important;
   top: 50% !important;
   right: auto !important;
@@ -3658,15 +3517,11 @@ html.dec-slack-ui-v2
   pointer-events: none !important;
 }
 
-html.dec-slack-ui-v2
-  .dec-v2-message.dec-v2-group-start.dec-v2-has-author
-  .message-data small {
+html.dec-slack-ui-v2 .dec-v2-message.dec-v2-group-start.dec-v2-has-author .message-data small {
   display: none !important;
 }
 
-html.dec-slack-ui-v2
-  .dec-v2-message
-  img.dec-slack-custom-emoji {
+html.dec-slack-ui-v2 .dec-v2-message img.dec-slack-custom-emoji {
   width: 20px !important;
   height: 20px !important;
   border-radius: 2px !important;

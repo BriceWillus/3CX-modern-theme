@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.5
+// @version      2.0.0-beta.8
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -56,7 +56,8 @@
    * Une fois cette URL renseignée dans le script distribué à l'équipe,
    * tous les utilisateurs reçoivent les mêmes emojis automatiquement.
    */
-  const CUSTOM_EMOJI_MANIFEST_URL = "https://bricewillus.github.io/3CX-modern-theme/3cx-slack-emojis.json";
+  const CUSTOM_EMOJI_MANIFEST_URL =
+    "https://bricewillus.github.io/3CX-modern-theme/3cx-slack-emojis.json";
 
   /*
    * Variante sans manifeste : les définitions placées ici sont directement
@@ -124,10 +125,10 @@
   }
 
   function normalizeHex(value, fallbackValue = "#4a154b") {
-    const normalized = String(value || "").trim().toLowerCase();
-    return /^#[0-9a-f]{6}$/.test(normalized)
-      ? normalized
-      : fallbackValue;
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallbackValue;
   }
 
   function hexToRgb(hex) {
@@ -167,15 +168,11 @@
   }
 
   const preferences = {
-    layout:
-      readSetting(STORAGE_LAYOUT, "left") === "split" ? "split" : "left",
-    theme:
-      readSetting(STORAGE_THEME, "dark") === "light" ? "light" : "dark",
+    layout: readSetting(STORAGE_LAYOUT, "left") === "split" ? "split" : "left",
+    theme: readSetting(STORAGE_THEME, "dark") === "light" ? "light" : "dark",
     accent: normalizeHex(readSetting(STORAGE_ACCENT, "#4a154b")),
-    searchCollapsed:
-      readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
-    notificationSound:
-      readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
+    searchCollapsed: readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
+    notificationSound: readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
     notificationSoundId: readSetting(STORAGE_NOTIFICATION_SOUND_ID, ""),
   };
 
@@ -183,46 +180,41 @@
     const root = document.documentElement;
     const accent = preferences.accent;
     const { red, green, blue } = hexToRgb(accent);
-    const luminance =
-      (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+    const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
     const lightTheme = preferences.theme === "light";
 
     root.style.setProperty("--dec-accent", accent);
     root.style.setProperty("--dec-accent-rgb", `${red}, ${green}, ${blue}`);
     root.style.setProperty("--dec-accent-dark", mixHex(accent, "#000000", 0.34));
-    root.style.setProperty(
-      "--dec-accent-darker",
-      mixHex(accent, "#000000", 0.56),
-    );
+    root.style.setProperty("--dec-accent-darker", mixHex(accent, "#000000", 0.56));
     root.style.setProperty(
       "--dec-accent-hover",
       mixHex(accent, "#ffffff", lightTheme ? 0.05 : 0.18),
     );
-    root.style.setProperty(
-      "--dec-accent-soft",
-      rgba(accent, lightTheme ? 0.10 : 0.24),
-    );
-    root.style.setProperty(
-      "--dec-accent-border",
-      rgba(accent, lightTheme ? 0.25 : 0.42),
-    );
+    root.style.setProperty("--dec-accent-soft", rgba(accent, lightTheme ? 0.1 : 0.24));
+    root.style.setProperty("--dec-accent-border", rgba(accent, lightTheme ? 0.25 : 0.42));
     root.style.setProperty("--dec-accent-ring", rgba(accent, 0.24));
-    root.style.setProperty(
-      "--dec-accent-own",
-      rgba(accent, lightTheme ? 0.075 : 0.12),
+    root.style.setProperty("--dec-accent-own", rgba(accent, lightTheme ? 0.075 : 0.12));
+    root.style.setProperty("--dec-accent-own-hover", rgba(accent, lightTheme ? 0.12 : 0.18));
+    root.style.setProperty("--dec-accent-own-border", rgba(accent, lightTheme ? 0.16 : 0.2));
+    root.style.setProperty("--dec-on-accent", luminance > 0.62 ? "#1d1c1d" : "#ffffff");
+  }
+
+  function controlElements(controls) {
+    return Object.fromEntries(
+      [
+        ["layoutButton", "layout"],
+        ["themeButton", "theme"],
+        ["searchButton", "search"],
+        ["soundButton", "sound"],
+        ["colorInput", "accent"],
+      ].map(([name, key]) => [name, controls.querySelector(`[data-dec-control='${key}']`)]),
     );
-    root.style.setProperty(
-      "--dec-accent-own-hover",
-      rgba(accent, lightTheme ? 0.12 : 0.18),
-    );
-    root.style.setProperty(
-      "--dec-accent-own-border",
-      rgba(accent, lightTheme ? 0.16 : 0.20),
-    );
-    root.style.setProperty(
-      "--dec-on-accent",
-      luminance > 0.62 ? "#1d1c1d" : "#ffffff",
-    );
+  }
+
+  function setControlActive(button, active) {
+    button.dataset.active = String(active);
+    button.setAttribute("aria-pressed", String(active));
   }
 
   function updateControls() {
@@ -231,35 +223,20 @@
       return;
     }
 
-    const layoutButton = controls.querySelector(
-      "[data-dec-control='layout']",
-    );
-    const themeButton = controls.querySelector("[data-dec-control='theme']");
-    const searchButton = controls.querySelector("[data-dec-control='search']");
-    const soundButton = controls.querySelector("[data-dec-control='sound']");
-    const colorInput = controls.querySelector("[data-dec-control='accent']");
+    const { layoutButton, themeButton, searchButton, soundButton, colorInput } =
+      controlElements(controls);
 
     const splitLayout = preferences.layout === "split";
     const lightTheme = preferences.theme === "light";
 
-    layoutButton.dataset.active = String(splitLayout);
-    layoutButton.setAttribute("aria-pressed", String(splitLayout));
-    layoutButton.title = splitLayout
-      ? "Tout aligner à gauche"
-      : "Afficher mes messages à droite";
+    setControlActive(layoutButton, splitLayout);
+    layoutButton.title = splitLayout ? "Tout aligner à gauche" : "Afficher mes messages à droite";
 
-    themeButton.dataset.active = String(lightTheme);
-    themeButton.setAttribute("aria-pressed", String(lightTheme));
+    setControlActive(themeButton, lightTheme);
     themeButton.textContent = lightTheme ? "☾" : "☀";
-    themeButton.title = lightTheme
-      ? "Passer au thème sombre"
-      : "Passer au thème clair";
+    themeButton.title = lightTheme ? "Passer au thème sombre" : "Passer au thème clair";
 
-    searchButton.dataset.active = String(preferences.searchCollapsed);
-    searchButton.setAttribute(
-      "aria-pressed",
-      String(preferences.searchCollapsed),
-    );
+    setControlActive(searchButton, preferences.searchCollapsed);
     searchButton.textContent = preferences.searchCollapsed ? "⌄" : "⌕";
     searchButton.title = preferences.searchCollapsed
       ? "Déplier la barre de recherche"
@@ -286,18 +263,9 @@
 
   function applyPreferences() {
     const root = document.documentElement;
-    root.classList.toggle(
-      "dec-slack-layout-split",
-      preferences.layout === "split",
-    );
-    root.classList.toggle(
-      "dec-slack-theme-light",
-      preferences.theme === "light",
-    );
-    root.classList.toggle(
-      "dec-slack-search-collapsed",
-      preferences.searchCollapsed,
-    );
+    root.classList.toggle("dec-slack-layout-split", preferences.layout === "split");
+    root.classList.toggle("dec-slack-theme-light", preferences.theme === "light");
+    root.classList.toggle("dec-slack-search-collapsed", preferences.searchCollapsed);
     root.classList.remove("dec-slack-chat-header-collapsed");
     applyAccentVariables();
     updateControls();
@@ -309,9 +277,7 @@
 
   function closeNotificationSoundMenu({ restoreFocus = false } = {}) {
     const menu = notificationSoundMenu();
-    const button = document.querySelector(
-      `#${CONTROLS_ID} [data-dec-control='sound']`,
-    );
+    const button = document.querySelector(`#${CONTROLS_ID} [data-dec-control='sound']`);
     if (!menu || !button) {
       return;
     }
@@ -444,17 +410,11 @@
       </label>
     `;
 
-    const layoutButton = controls.querySelector(
-      "[data-dec-control='layout']",
-    );
-    const themeButton = controls.querySelector("[data-dec-control='theme']");
-    const searchButton = controls.querySelector("[data-dec-control='search']");
-    const soundButton = controls.querySelector("[data-dec-control='sound']");
-    const colorInput = controls.querySelector("[data-dec-control='accent']");
+    const { layoutButton, themeButton, searchButton, soundButton, colorInput } =
+      controlElements(controls);
 
     layoutButton.addEventListener("click", () => {
-      preferences.layout =
-        preferences.layout === "split" ? "left" : "split";
+      preferences.layout = preferences.layout === "split" ? "left" : "split";
       writeSetting(STORAGE_LAYOUT, preferences.layout);
       applyPreferences();
     });
@@ -467,13 +427,23 @@
 
     searchButton.addEventListener("click", () => {
       preferences.searchCollapsed = !preferences.searchCollapsed;
-      writeSetting(
-        STORAGE_SEARCH_COLLAPSED,
-        String(preferences.searchCollapsed),
-      );
+      writeSetting(STORAGE_SEARCH_COLLAPSED, String(preferences.searchCollapsed));
       applyPreferences();
     });
 
+    bindSoundControls(controls, soundButton);
+
+    colorInput.addEventListener("input", () => {
+      preferences.accent = normalizeHex(colorInput.value, preferences.accent);
+      writeSetting(STORAGE_ACCENT, preferences.accent);
+      applyPreferences();
+    });
+
+    document.body.appendChild(controls);
+    updateControls();
+  }
+
+  function bindSoundControls(controls, soundButton) {
     soundButton.addEventListener("click", () => {
       const menu = notificationSoundMenu();
       if (!menu) {
@@ -484,9 +454,7 @@
       soundButton.setAttribute("aria-expanded", String(opening));
       if (opening) {
         renderNotificationSoundMenu();
-        menu
-          .querySelector('.dec-slack-sound-option[data-active="true"]')
-          ?.focus();
+        menu.querySelector('.dec-slack-sound-option[data-active="true"]')?.focus();
       }
     });
 
@@ -494,11 +462,7 @@
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
       }
-      const options = [
-        ...notificationSoundMenu().querySelectorAll(
-          ".dec-slack-sound-option",
-        ),
-      ];
+      const options = [...notificationSoundMenu().querySelectorAll(".dec-slack-sound-option")];
       if (options.length === 0) {
         return;
       }
@@ -526,15 +490,6 @@
         closeNotificationSoundMenu({ restoreFocus: true });
       }
     });
-
-    colorInput.addEventListener("input", () => {
-      preferences.accent = normalizeHex(colorInput.value, preferences.accent);
-      writeSetting(STORAGE_ACCENT, preferences.accent);
-      applyPreferences();
-    });
-
-    document.body.appendChild(controls);
-    updateControls();
   }
 
   const avatarPalette = [
@@ -670,9 +625,7 @@
     const code = normalizeCustomEmojiCode(codeValue);
     const rawUrl = typeof entry === "string" ? entry : entry?.url;
     const label =
-      typeof entry === "object" && entry
-        ? String(entry.label || entry.title || "").trim()
-        : "";
+      typeof entry === "object" && entry ? String(entry.label || entry.title || "").trim() : "";
 
     if (!code || !rawUrl) {
       return null;
@@ -710,19 +663,22 @@
     return definitions;
   }
 
-  function customEmojiMapsAreEqual(first, second) {
+  function definitionMapsAreEqual(first, second, compare) {
     if (first.size !== second.size) {
       return false;
     }
-
-    return [...first].every(([code, definition]) => {
-      const other = second.get(code);
-      return (
-        other &&
-        other.url === definition.url &&
-        other.label === definition.label
-      );
+    return [...first].every(([key, definition]) => {
+      const other = second.get(key);
+      return other && compare(definition, other);
     });
+  }
+
+  function customEmojiMapsAreEqual(first, second) {
+    return definitionMapsAreEqual(
+      first,
+      second,
+      (definition, other) => other.url === definition.url && other.label === definition.label,
+    );
   }
 
   function normalizeNotificationSoundId(value) {
@@ -742,27 +698,17 @@
 
     try {
       const url = new URL(String(rawUrl).trim(), baseUrl || window.location.href);
-      const isAudioDataUrl =
-        url.protocol === "data:" && url.href.startsWith("data:audio/");
-      if (
-        url.protocol !== "https:" &&
-        url.protocol !== "http:" &&
-        !isAudioDataUrl
-      ) {
+      const isAudioDataUrl = url.protocol === "data:" && url.href.startsWith("data:audio/");
+      if (url.protocol !== "https:" && url.protocol !== "http:" && !isAudioDataUrl) {
         return null;
       }
 
-      const rawVolume =
-        typeof entry === "object" && entry ? Number(entry.volume) : 0.7;
-      const volume = Number.isFinite(rawVolume)
-        ? Math.min(1, Math.max(0, rawVolume))
-        : 0.7;
+      const rawVolume = typeof entry === "object" && entry ? Number(entry.volume) : 0.7;
+      const volume = Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.7;
       const pathname = decodeURIComponent(url.pathname || "");
       const filename = pathname.split("/").filter(Boolean).at(-1) || "";
       const label =
-        typeof entry === "object" && entry
-          ? String(entry.label || entry.title || "").trim()
-          : "";
+        typeof entry === "object" && entry ? String(entry.label || entry.title || "").trim() : "";
       return {
         id,
         url: url.href,
@@ -805,14 +751,11 @@
       definitions.set(legacyDefinition.id, legacyDefinition);
     }
 
-    let defaultId = normalizeNotificationSoundId(
-      source.defaultNotificationSound,
-    );
+    let defaultId = normalizeNotificationSoundId(source.defaultNotificationSound);
     if (!definitions.has(defaultId) && legacyDefinition) {
       defaultId =
-        [...definitions.values()].find(
-          (definition) => definition.url === legacyDefinition.url,
-        )?.id || "";
+        [...definitions.values()].find((definition) => definition.url === legacyDefinition.url)
+          ?.id || "";
     }
     if (!definitions.has(defaultId)) {
       defaultId = definitions.keys().next().value || "";
@@ -831,24 +774,18 @@
   }
 
   function notificationSoundMapsAreEqual(first, second) {
-    if (first.size !== second.size) {
-      return false;
-    }
-    return [...first].every(([id, definition]) => {
-      const other = second.get(id);
-      return (
-        other &&
+    return definitionMapsAreEqual(
+      first,
+      second,
+      (definition, other) =>
         notificationSoundDefinitionsAreEqual(definition, other) &&
         definition.label === other.label &&
-        definition.filename === other.filename
-      );
-    });
+        definition.filename === other.filename,
+    );
   }
 
   function audioMimeType(url, responseHeaders = "") {
-    const headerMime =
-      String(responseHeaders).match(/^content-type:\s*([^;\r\n]+)/im)?.[1] ||
-      "";
+    const headerMime = String(responseHeaders).match(/^content-type:\s*([^;\r\n]+)/im)?.[1] || "";
     const extension = new URL(url).pathname.split(".").pop()?.toLowerCase();
     const extensionMime = {
       mp3: "audio/mpeg",
@@ -886,9 +823,7 @@
     const chunks = [];
     const chunkSize = 0x8000;
     for (let index = 0; index < view.length; index += chunkSize) {
-      chunks.push(
-        String.fromCharCode(...view.subarray(index, index + chunkSize)),
-      );
+      chunks.push(String.fromCharCode(...view.subarray(index, index + chunkSize)));
     }
     return `data:${mimeType};base64,${btoa(chunks.join(""))}`;
   }
@@ -918,27 +853,19 @@
               if (bytes instanceof Blob) {
                 bytes = await bytes.arrayBuffer();
               } else if (ArrayBuffer.isView(bytes)) {
-                bytes = bytes.buffer.slice(
-                  bytes.byteOffset,
-                  bytes.byteOffset + bytes.byteLength,
-                );
+                bytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
               }
 
               if (!(bytes instanceof ArrayBuffer) || bytes.byteLength === 0) {
                 throw new Error("Le fichier audio est vide ou illisible.");
               }
 
-              const mimeType = audioMimeType(
-                definition.url,
-                response.responseHeaders || "",
-              );
+              const mimeType = audioMimeType(definition.url, response.responseHeaders || "");
               const blob = new Blob([bytes], { type: mimeType });
               resolve({
                 // Firefox accepte de façon plus constante une URL data dans
                 // un userscript qu'une URL blob créée par le bac à sable GM.
-                playbackUrl: IS_FIREFOX
-                  ? audioDataUrl(bytes, mimeType)
-                  : URL.createObjectURL(blob),
+                playbackUrl: IS_FIREFOX ? audioDataUrl(bytes, mimeType) : URL.createObjectURL(blob),
                 bytes,
               });
             } catch (error) {
@@ -966,10 +893,7 @@
         }
         return response.arrayBuffer().then((bytes) => {
           const blob = new Blob([bytes], {
-            type: audioMimeType(
-              definition.url,
-              response.headers.get("content-type") || "",
-            ),
+            type: audioMimeType(definition.url, response.headers.get("content-type") || ""),
           });
           return {
             playbackUrl: URL.createObjectURL(blob),
@@ -989,8 +913,7 @@
       return notificationAudioContext;
     }
 
-    const AudioContextClass =
-      window.AudioContext || window.webkitAudioContext;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) {
       return null;
     }
@@ -1031,15 +954,11 @@
     return (
       (customNotificationSounds.has(defaultNotificationSoundId)
         ? defaultNotificationSoundId
-        : customNotificationSounds.keys().next().value) ||
-      SILENT_NOTIFICATION_SOUND_ID
+        : customNotificationSounds.keys().next().value) || SILENT_NOTIFICATION_SOUND_ID
     );
   }
 
-  function selectNotificationSound(
-    requestedId,
-    { persist = false, preview = false } = {},
-  ) {
+  function selectNotificationSound(requestedId, { persist = false, preview = false } = {}) {
     const selectedId = resolvedNotificationSoundId(requestedId);
     const selectedSound =
       selectedId === SILENT_NOTIFICATION_SOUND_ID
@@ -1060,16 +979,10 @@
     preferences.notificationSound = Boolean(selectedSound);
 
     if (persist) {
-      writeSetting(
-        STORAGE_NOTIFICATION_SOUND_ID,
-        preferences.notificationSoundId,
-      );
+      writeSetting(STORAGE_NOTIFICATION_SOUND_ID, preferences.notificationSoundId);
       /* Conservé pour qu'un retour temporaire à une ancienne version du script
          respecte encore le choix silencieux/actif. */
-      writeSetting(
-        STORAGE_NOTIFICATION_SOUND,
-        String(preferences.notificationSound),
-      );
+      writeSetting(STORAGE_NOTIFICATION_SOUND, String(preferences.notificationSound));
     }
 
     updateControls();
@@ -1118,9 +1031,7 @@
           URL.revokeObjectURL(notificationAudioObjectUrl);
         }
 
-        notificationAudioObjectUrl = playbackUrl.startsWith("blob:")
-          ? playbackUrl
-          : "";
+        notificationAudioObjectUrl = playbackUrl.startsWith("blob:") ? playbackUrl : "";
         notificationAudio = new Audio(playbackUrl);
         notificationAudio.dataset.decSoundUrl = definition.url;
         notificationAudio.preload = "auto";
@@ -1129,9 +1040,7 @@
         const audioContext = ensureNotificationAudioContext();
         if (audioContext && bytes) {
           try {
-            notificationAudioBuffer = await audioContext.decodeAudioData(
-              bytes.slice(0),
-            );
+            notificationAudioBuffer = await audioContext.decodeAudioData(bytes.slice(0));
             notificationAudioBufferUrl = definition.url;
           } catch (error) {
             notificationAudioBuffer = null;
@@ -1167,10 +1076,7 @@
   }
 
   function playCustomNotification({ preview = false } = {}) {
-    if (
-      !preferences.notificationSound ||
-      !customNotificationSound
-    ) {
+    if (!preferences.notificationSound || !customNotificationSound) {
       return;
     }
 
@@ -1185,19 +1091,13 @@
     const resumeContext = audioContext
       ? audioContext.resume().catch((error) => {
           if (preview) {
-            console.warn(
-              "[3CX Slack] Le navigateur a bloqué l’activation du moteur audio.",
-              error,
-            );
+            console.warn("[3CX Slack] Le navigateur a bloqué l’activation du moteur audio.", error);
           }
         })
       : Promise.resolve();
 
     void prepareNotificationAudio().then((audio) => {
-      if (
-        !preferences.notificationSound ||
-        customNotificationSound?.url !== requestedSound.url
-      ) {
+      if (!preferences.notificationSound || customNotificationSound?.url !== requestedSound.url) {
         return;
       }
 
@@ -1241,10 +1141,7 @@
       if (playback && typeof playback.catch === "function") {
         playback.catch((error) => {
           if (preview) {
-            console.warn(
-              "[3CX Slack] Le navigateur n'a pas pu lire le son personnalisé.",
-              error,
-            );
+            console.warn("[3CX Slack] Le navigateur n'a pas pu lire le son personnalisé.", error);
           }
         });
       }
@@ -1252,33 +1149,25 @@
   }
 
   function updateExistingCustomEmojiImages() {
-    document
-      .querySelectorAll(`img.${CUSTOM_EMOJI_CLASS}[data-dec-emoji-code]`)
-      .forEach((image) => {
-        const definition = customEmojis.get(image.dataset.decEmojiCode || "");
-        if (!definition) {
-          return;
-        }
+    document.querySelectorAll(`img.${CUSTOM_EMOJI_CLASS}[data-dec-emoji-code]`).forEach((image) => {
+      const definition = customEmojis.get(image.dataset.decEmojiCode || "");
+      if (!definition) {
+        return;
+      }
 
-        if (image.src !== definition.url) {
-          image.src = definition.url;
-        }
-        image.title = definition.label
-          ? `:${definition.code}: — ${definition.label}`
-          : `:${definition.code}:`;
-      });
+      if (image.src !== definition.url) {
+        image.src = definition.url;
+      }
+      image.title = definition.label
+        ? `:${definition.code}: — ${definition.label}`
+        : `:${definition.code}:`;
+    });
   }
 
   function applyCustomEmojiManifest(manifest, manifestUrl = "") {
     const effectiveManifestUrl = manifestUrl || window.location.href;
-    const nextDefinitions = customEmojiDefinitionsFrom(
-      INLINE_CUSTOM_EMOJIS,
-      window.location.href,
-    );
-    const remoteDefinitions = customEmojiDefinitionsFrom(
-      manifest,
-      effectiveManifestUrl,
-    );
+    const nextDefinitions = customEmojiDefinitionsFrom(INLINE_CUSTOM_EMOJIS, window.location.href);
+    const remoteDefinitions = customEmojiDefinitionsFrom(manifest, effectiveManifestUrl);
     const nextNotificationSoundCatalog = notificationSoundDefinitionsFrom(
       manifest,
       effectiveManifestUrl,
@@ -1288,10 +1177,7 @@
       nextDefinitions.set(code, definition);
     });
 
-    const emojisChanged = !customEmojiMapsAreEqual(
-      customEmojis,
-      nextDefinitions,
-    );
+    const emojisChanged = !customEmojiMapsAreEqual(customEmojis, nextDefinitions);
     const soundCatalogChanged =
       defaultNotificationSoundId !== nextNotificationSoundCatalog.defaultId ||
       !notificationSoundMapsAreEqual(
@@ -1335,9 +1221,7 @@
     }
 
     try {
-      const cached = JSON.parse(
-        window.localStorage.getItem(STORAGE_EMOJI_MANIFEST) || "null",
-      );
+      const cached = JSON.parse(window.localStorage.getItem(STORAGE_EMOJI_MANIFEST) || "null");
       return cached?.url === CUSTOM_EMOJI_MANIFEST_URL ? cached.manifest : null;
     } catch {
       return null;
@@ -1396,9 +1280,7 @@
     }
 
     try {
-      const manifest = await requestCustomEmojiManifest(
-        CUSTOM_EMOJI_MANIFEST_URL,
-      );
+      const manifest = await requestCustomEmojiManifest(CUSTOM_EMOJI_MANIFEST_URL);
       applyCustomEmojiManifest(manifest, CUSTOM_EMOJI_MANIFEST_URL);
 
       try {
@@ -1413,10 +1295,7 @@
         // Le dernier manifeste chargé reste utilisable en mémoire.
       }
     } catch (error) {
-      console.warn(
-        "[3CX Slack] Impossible d'actualiser les emojis partagés.",
-        error,
-      );
+      console.warn("[3CX Slack] Impossible d'actualiser les emojis partagés.", error);
     }
   }
 
@@ -1426,9 +1305,7 @@
     image.dataset.decEmojiCode = definition.code;
     image.src = definition.url;
     image.alt = originalToken;
-    image.title = definition.label
-      ? `${originalToken} — ${definition.label}`
-      : originalToken;
+    image.title = definition.label ? `${originalToken} — ${definition.label}` : originalToken;
     image.loading = "lazy";
     image.decoding = "async";
     image.draggable = false;
@@ -1446,27 +1323,19 @@
     }
 
     const textNodes = [];
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (
-            !parent ||
-            parent.closest(
-              `.${CUSTOM_EMOJI_CLASS}, a, code, pre, textarea, [contenteditable="true"]`,
-            )
-          ) {
-            return NodeFilter.FILTER_REJECT;
-          }
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (
+          !parent ||
+          parent.closest(`.${CUSTOM_EMOJI_CLASS}, a, code, pre, textarea, [contenteditable="true"]`)
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
 
-          return node.nodeValue?.includes(":")
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        },
+        return node.nodeValue?.includes(":") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
       },
-    );
+    });
 
     while (walker.nextNode()) {
       textNodes.push(walker.currentNode);
@@ -1481,9 +1350,7 @@
       let match;
 
       while ((match = matcher.exec(text))) {
-        const definition = customEmojis.get(
-          normalizeCustomEmojiCode(match[1]),
-        );
+        const definition = customEmojis.get(normalizeCustomEmojiCode(match[1]));
         if (!definition) {
           continue;
         }
@@ -1515,7 +1382,9 @@
     }
 
     document
-      .querySelectorAll(`${MESSAGE_SELECTOR} .message-text-internal, chat-message app-chat-message-text > span`)
+      .querySelectorAll(
+        `${MESSAGE_SELECTOR} .message-text-internal, chat-message app-chat-message-text > span`,
+      )
       .forEach(replaceCustomEmojiCodes);
   }
 
@@ -1528,22 +1397,20 @@
     void refreshCustomEmojiManifest();
 
     if (CUSTOM_EMOJI_MANIFEST_URL) {
-      window.setInterval(
-        () => void refreshCustomEmojiManifest(),
-        CUSTOM_EMOJI_REFRESH_MS,
-      );
+      window.setInterval(() => void refreshCustomEmojiManifest(), CUSTOM_EMOJI_REFRESH_MS);
     }
   }
 
   function emojiComposerFromTarget(target) {
-    const element =
-      target?.nodeType === Node.ELEMENT_NODE ? target : target?.parentElement;
-    return element?.closest?.(
-      "app-chat-message-input emoji-text-input [contenteditable='true'], " +
-        "#chat-form-controls emoji-text-input .message-input, " +
-        "#chat-form-controls textarea, " +
-        "#chat-form-controls [contenteditable='true']",
-    ) || null;
+    const element = target?.nodeType === Node.ELEMENT_NODE ? target : target?.parentElement;
+    return (
+      element?.closest?.(
+        "app-chat-message-input emoji-text-input [contenteditable='true'], " +
+          "#chat-form-controls emoji-text-input .message-input, " +
+          "#chat-form-controls textarea, " +
+          "#chat-form-controls [contenteditable='true']",
+      ) || null
+    );
   }
 
   function composerCaretInfo(composer) {
@@ -1563,11 +1430,7 @@
     }
 
     const selection = window.getSelection();
-    if (
-      !selection ||
-      selection.rangeCount === 0 ||
-      !composer.contains(selection.anchorNode)
-    ) {
+    if (!selection || selection.rangeCount === 0 || !composer.contains(selection.anchorNode)) {
       return null;
     }
 
@@ -1700,9 +1563,7 @@
     panel.replaceChildren(fragment);
     panel.hidden = false;
     positionEmojiAutocomplete();
-    panel
-      .querySelector('[data-active="true"]')
-      ?.scrollIntoView({ block: "nearest" });
+    panel.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
   }
 
   function updateEmojiAutocomplete(composer) {
@@ -1712,9 +1573,7 @@
     }
 
     const caretInfo = composerCaretInfo(composer);
-    const tokenInfo = caretInfo
-      ? emojiTokenAtCaret(caretInfo.text, caretInfo.caret)
-      : null;
+    const tokenInfo = caretInfo ? emojiTokenAtCaret(caretInfo.text, caretInfo.caret) : null;
     if (!tokenInfo) {
       closeEmojiAutocomplete();
       return;
@@ -1741,11 +1600,8 @@
       return;
     }
 
-    const previousCode =
-      emojiAutocompleteState?.matches[emojiAutocompleteState.activeIndex]?.code;
-    const preservedIndex = matches.findIndex(
-      (definition) => definition.code === previousCode,
-    );
+    const previousCode = emojiAutocompleteState?.matches[emojiAutocompleteState.activeIndex]?.code;
+    const preservedIndex = matches.findIndex((definition) => definition.code === previousCode);
     emojiAutocompleteState = {
       composer,
       start: tokenInfo.start,
@@ -1788,9 +1644,7 @@
 
   function insertEmojiSuggestion(code) {
     const state = emojiAutocompleteState;
-    const selectedDefinition = state?.matches.find(
-      (definition) => definition.code === code,
-    );
+    const selectedDefinition = state?.matches.find((definition) => definition.code === code);
     if (selectedDefinition?.literal) {
       closeEmojiAutocomplete();
       return;
@@ -1807,11 +1661,13 @@
 
     if (composer instanceof HTMLInputElement || composer instanceof HTMLTextAreaElement) {
       composer.setRangeText(replacement, state.start, state.end, "end");
-      composer.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        inputType: "insertText",
-        data: replacement,
-      }));
+      composer.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText",
+          data: replacement,
+        }),
+      );
       closeEmojiAutocomplete();
       return;
     }
@@ -1834,11 +1690,13 @@
       range.collapse(true);
       selection.removeAllRanges();
       selection.addRange(range);
-      composer.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        inputType: "insertText",
-        data: replacement,
-      }));
+      composer.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText",
+          data: replacement,
+        }),
+      );
     }
     closeEmojiAutocomplete();
   }
@@ -1850,56 +1708,68 @@
     emojiAutocompleteInitialized = true;
     ensureEmojiAutocompletePanel();
 
-    document.addEventListener("input", (event) => {
-      const composer = emojiComposerFromTarget(event.target);
-      if (composer) {
-        updateEmojiAutocomplete(composer);
-      }
-    }, true);
+    document.addEventListener(
+      "input",
+      (event) => {
+        const composer = emojiComposerFromTarget(event.target);
+        if (composer) {
+          updateEmojiAutocomplete(composer);
+        }
+      },
+      true,
+    );
 
-    document.addEventListener("keydown", (event) => {
-      const state = emojiAutocompleteState;
-      if (!state || emojiComposerFromTarget(event.target) !== state.composer) {
-        return;
-      }
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeEmojiAutocomplete();
-        return;
-      }
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        state.activeIndex =
-          (state.activeIndex + direction + state.matches.length) % state.matches.length;
-        renderEmojiAutocomplete();
-        return;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        const selectedDefinition = state.matches[state.activeIndex];
-        if (selectedDefinition?.literal) {
-          closeEmojiAutocomplete();
-          if (event.key === "Tab") {
-            event.preventDefault();
-          }
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        const state = emojiAutocompleteState;
+        if (!state || emojiComposerFromTarget(event.target) !== state.composer) {
           return;
         }
-        event.preventDefault();
-        insertEmojiSuggestion(selectedDefinition.code);
-      }
-    }, true);
 
-    document.addEventListener("pointerdown", (event) => {
-      const panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
-      if (
-        emojiAutocompleteState &&
-        !panel?.contains(event.target) &&
-        emojiComposerFromTarget(event.target) !== emojiAutocompleteState.composer
-      ) {
-        closeEmojiAutocomplete();
-      }
-    }, true);
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeEmojiAutocomplete();
+          return;
+        }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          state.activeIndex =
+            (state.activeIndex + direction + state.matches.length) % state.matches.length;
+          renderEmojiAutocomplete();
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          const selectedDefinition = state.matches[state.activeIndex];
+          if (selectedDefinition?.literal) {
+            closeEmojiAutocomplete();
+            if (event.key === "Tab") {
+              event.preventDefault();
+            }
+            return;
+          }
+          event.preventDefault();
+          insertEmojiSuggestion(selectedDefinition.code);
+        }
+      },
+      true,
+    );
+
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        const panel = document.getElementById(EMOJI_AUTOCOMPLETE_ID);
+        if (
+          emojiAutocompleteState &&
+          !panel?.contains(event.target) &&
+          emojiComposerFromTarget(event.target) !== emojiAutocompleteState.composer
+        ) {
+          closeEmojiAutocomplete();
+        }
+      },
+      true,
+    );
 
     window.addEventListener("resize", positionEmojiAutocomplete);
     document.addEventListener("scroll", positionEmojiAutocomplete, true);
@@ -1918,18 +1788,13 @@
     }
 
     const name =
-      nameElement?.textContent
-        ?.replace(new RegExp(`\\s*${extension}\\s*$`), "")
-        .trim() ||
+      nameElement?.textContent?.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim() ||
       line?.querySelector(".text-truncate")?.textContent?.trim() ||
       fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
 
     const image = row.querySelector("app-avatar img.avatar-content, app-avatar img");
-    const initialElement = row.querySelector(
-      "app-avatar .avatar-content:not(img)",
-    );
-    const initials =
-      initialElement?.textContent?.trim() || initialsFromName(name);
+    const initialElement = row.querySelector("app-avatar .avatar-content:not(img)");
+    const initials = initialElement?.textContent?.trim() || initialsFromName(name);
 
     return {
       extension,
@@ -1941,9 +1806,7 @@
 
   function readCachedOwnProfile() {
     try {
-      const value = JSON.parse(
-        window.localStorage.getItem(STORAGE_OWN_PROFILE) || "null",
-      );
+      const value = JSON.parse(window.localStorage.getItem(STORAGE_OWN_PROFILE) || "null");
       if (!value || typeof value !== "object") {
         return null;
       }
@@ -1956,8 +1819,7 @@
         extension,
         name,
         imageUrl: String(value.imageUrl || ""),
-        initials:
-          String(value.initials || "").trim() || initialsFromName(name),
+        initials: String(value.initials || "").trim() || initialsFromName(name),
       };
     } catch {
       return null;
@@ -1981,27 +1843,20 @@
   }
 
   function ownProfileFromVisibleMessages(profiles) {
-    const names = [
-      ...document.querySelectorAll(
-        "chat-message > .message-name.message-right",
-      ),
-    ];
+    const names = [...document.querySelectorAll("chat-message > .message-name.message-right")];
     for (let index = names.length - 1; index >= 0; index -= 1) {
       const fullName = String(names[index].textContent || "").trim();
       const extension = extensionFromText(fullName);
       if (!extension) {
         continue;
       }
-      const name = fullName
-        .replace(new RegExp(`\\s*${extension}\\s*$`), "")
-        .trim();
+      const name = fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
       const known = profiles.get(extension);
       return {
         extension,
         name: known?.name || name,
         imageUrl: known?.imageUrl || "",
-        initials:
-          known?.initials || initialsFromName(known?.name || name),
+        initials: known?.initials || initialsFromName(known?.name || name),
       };
     }
     return null;
@@ -2013,14 +1868,10 @@
       return null;
     }
 
-    const participants = [
-      ...document.querySelectorAll(PARTICIPANT_SELECTOR),
-    ]
+    const participants = [...document.querySelectorAll(PARTICIPANT_SELECTOR)]
       .map(participantProfileFromRow)
       .filter(Boolean);
-    const ownCandidates = participants.filter(
-      (profile) => profile.extension !== contact.extension,
-    );
+    const ownCandidates = participants.filter((profile) => profile.extension !== contact.extension);
     return ownCandidates.length === 1 ? ownCandidates[0] : null;
   }
 
@@ -2034,9 +1885,7 @@
     ];
 
     for (const candidate of candidates) {
-      const image = candidate.matches("img")
-        ? candidate
-        : candidate.querySelector("img");
+      const image = candidate.matches("img") ? candidate : candidate.querySelector("img");
       const imageUrl = image?.currentSrc || image?.src || "";
       if (imageUrl) {
         return imageUrl;
@@ -2044,9 +1893,7 @@
 
       for (const element of [candidate, ...candidate.querySelectorAll("*")]) {
         const backgroundImage = window.getComputedStyle(element).backgroundImage;
-        const match = String(backgroundImage || "").match(
-          /^url\(["']?(.*?)["']?\)$/,
-        );
+        const match = String(backgroundImage || "").match(/^url\(["']?(.*?)["']?\)$/);
         if (match?.[1]) {
           return match[1];
         }
@@ -2056,25 +1903,16 @@
   }
 
   function synchronizeOwnProfile(profiles) {
-    const detected =
-      ownProfileFromVisibleMessages(profiles) ||
-      ownProfileFromDirectParticipants();
+    const detected = ownProfileFromVisibleMessages(profiles) || ownProfileFromDirectParticipants();
     const cached = readCachedOwnProfile();
     const applicationProfileImage = ownProfileImageFromApplicationHeader();
-    const matchingCached =
-      detected && cached?.extension === detected.extension ? cached : null;
+    const matchingCached = detected && cached?.extension === detected.extension ? cached : null;
     const profile = detected
       ? {
           ...detected,
-          imageUrl:
-            applicationProfileImage ||
-            detected.imageUrl ||
-            matchingCached?.imageUrl ||
-            "",
+          imageUrl: applicationProfileImage || detected.imageUrl || matchingCached?.imageUrl || "",
           initials:
-            detected.initials ||
-            matchingCached?.initials ||
-            initialsFromName(detected.name),
+            detected.initials || matchingCached?.initials || initialsFromName(detected.name),
         }
       : cached
         ? {
@@ -2090,10 +1928,7 @@
         imageUrl: applicationProfileImage,
         initials: "",
       };
-      document.documentElement.style.setProperty(
-        "--slack-me-name",
-        JSON.stringify("Moi"),
-      );
+      document.documentElement.style.setProperty("--slack-me-name", JSON.stringify("Moi"));
       if (applicationProfileImage) {
         document.documentElement.style.setProperty(
           "--slack-me-avatar",
@@ -2110,15 +1945,10 @@
     }
     currentOwnProfile = profile;
     writeCachedOwnProfile(profile);
-    document.documentElement.style.setProperty(
-      "--slack-me-name",
-      JSON.stringify(profile.name),
-    );
+    document.documentElement.style.setProperty("--slack-me-name", JSON.stringify(profile.name));
     document.documentElement.style.setProperty(
       "--slack-me-avatar",
-      profile.imageUrl
-        ? `url(${JSON.stringify(profile.imageUrl)})`
-        : initialsAvatarCssUrl(profile),
+      profile.imageUrl ? `url(${JSON.stringify(profile.imageUrl)})` : initialsAvatarCssUrl(profile),
     );
   }
 
@@ -2144,19 +1974,14 @@
         return;
       }
 
-      const image = item.querySelector(
-        "app-avatar img.avatar-content, app-avatar img",
-      );
-      const initialElement = item.querySelector(
-        "app-avatar .avatar-content:not(img)",
-      );
+      const image = item.querySelector("app-avatar img.avatar-content, app-avatar img");
+      const initialElement = item.querySelector("app-avatar .avatar-content:not(img)");
       const name = fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
       const profile = {
         extension,
         name,
         imageUrl: image?.src || "",
-        initials:
-          initialElement?.textContent?.trim() || initialsFromName(name),
+        initials: initialElement?.textContent?.trim() || initialsFromName(name),
       };
 
       profiles.set(extension, profile);
@@ -2196,30 +2021,27 @@
     if (!header || !extension) {
       return null;
     }
-    if (header.querySelector('[data-qa="chat-name"]') &&
-        header.querySelector('app-avatar img[alt]')?.getAttribute('alt') !== extension) {
+    if (
+      header.querySelector('[data-qa="chat-name"]') &&
+      header.querySelector("app-avatar img[alt]")?.getAttribute("alt") !== extension
+    ) {
       return null;
     }
 
-    const name = fullName
-      .replace(new RegExp(`\\s*${extension}\\s*$`), "")
-      .trim();
+    const name = fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
     if (!name) {
       return null;
     }
 
     const avatar = header.querySelector("app-avatar");
     const image = avatar?.querySelector("img.avatar-content, img");
-    const initialElement = avatar?.querySelector(
-      ".avatar-content:not(img)",
-    );
+    const initialElement = avatar?.querySelector(".avatar-content:not(img)");
 
     return {
       extension,
       name,
       imageUrl: image?.src || "",
-      initials:
-        initialElement?.textContent?.trim() || initialsFromName(name),
+      initials: initialElement?.textContent?.trim() || initialsFromName(name),
     };
   }
 
@@ -2268,20 +2090,13 @@
     chat.style.setProperty("--slack-other-name", JSON.stringify(profile.name));
     chat.style.setProperty(
       "--slack-other-avatar",
-      profile.imageUrl
-        ? `url(${JSON.stringify(profile.imageUrl)})`
-        : initialsAvatarCssUrl(profile),
+      profile.imageUrl ? `url(${JSON.stringify(profile.imageUrl)})` : initialsAvatarCssUrl(profile),
     );
   }
 
   function visibleCssColor(value) {
     const color = String(value || "").trim();
-    if (
-      !color ||
-      color === "transparent" ||
-      color === "none" ||
-      color === "currentcolor"
-    ) {
+    if (!color || color === "transparent" || color === "none" || color === "currentcolor") {
       return "";
     }
     if (
@@ -2330,9 +2145,7 @@
         .join(".");
       const attributes = [...node.attributes]
         .filter(
-          (attribute) =>
-            attribute.name !== "class" &&
-            !attribute.name.startsWith("data-dec-"),
+          (attribute) => attribute.name !== "class" && !attribute.name.startsWith("data-dec-"),
         )
         .map((attribute) => `${attribute.name}=${attribute.value}`)
         .sort()
@@ -2344,16 +2157,11 @@
       ...nodes.map(nativeNodeState),
       String(element.textContent || "").trim(),
     ].join("|");
-    if (
-      element.dataset.decPresenceColor &&
-      element.dataset.decPresenceSignature === signature
-    ) {
+    if (element.dataset.decPresenceColor && element.dataset.decPresenceSignature === signature) {
       return element.dataset.decPresenceColor;
     }
 
-    const wasHidden = element.classList.contains(
-      "dec-slack-native-presence-hidden",
-    );
+    const wasHidden = element.classList.contains("dec-slack-native-presence-hidden");
     if (wasHidden) {
       element.classList.remove("dec-slack-native-presence-hidden");
     }
@@ -2362,10 +2170,7 @@
       for (const node of nodes) {
         const rect = node.getBoundingClientRect();
         const compactNode =
-          rect.width > 0 &&
-          rect.height > 0 &&
-          rect.width <= 24 &&
-          rect.height <= 24;
+          rect.width > 0 && rect.height > 0 && rect.width <= 24 && rect.height <= 24;
         for (const pseudo of [null, "::before", "::after"]) {
           const style = window.getComputedStyle(node, pseudo);
           const pseudoWidth = Number.parseFloat(style.width);
@@ -2379,9 +2184,7 @@
           if (!compactNode && !compactPseudo) {
             continue;
           }
-          const candidates = [
-            { value: style.backgroundColor, weight: 120 },
-          ];
+          const candidates = [{ value: style.backgroundColor, weight: 120 }];
           if (Number.parseFloat(style.borderTopWidth) > 0) {
             candidates.push({ value: style.borderTopColor, weight: 35 });
           }
@@ -2413,8 +2216,7 @@
             if (color) {
               const metrics = cssColorMetrics(color);
               const extremeNeutral =
-                metrics.saturation < 0.08 &&
-                (metrics.luminance < 0.08 || metrics.luminance > 0.92);
+                metrics.saturation < 0.08 && (metrics.luminance < 0.08 || metrics.luminance > 0.92);
               colorCandidates.push({
                 color,
                 score:
@@ -2436,9 +2238,8 @@
         element.classList.add("dec-slack-native-presence-hidden");
       }
     }
-    const bestColor = colorCandidates.sort(
-      (left, right) => right.score - left.score,
-    )[0]?.color || "";
+    const bestColor =
+      colorCandidates.sort((left, right) => right.score - left.score)[0]?.color || "";
     if (bestColor) {
       element.dataset.decPresenceColor = bestColor;
       element.dataset.decPresenceSignature = signature;
@@ -2446,18 +2247,18 @@
     return bestColor;
   }
 
-  function nativeConversationPresenceFromHeader(
-    header,
-    ignoredTitle,
-    visibleTitle,
-  ) {
+  function nativeConversationPresenceFromHeader(header, ignoredTitle, visibleTitle) {
     const nativeSemanticSelector =
       "[class*='status' i], [class*='presence' i], [data-status], " +
       "[data-presence], [data-qa*='status' i], [data-qa*='presence' i]";
     const candidateSelector = `${nativeSemanticSelector}, small, .text-muted`;
     const ignoredLabels = new Set(
       [visibleTitle, ignoredTitle.textContent]
-        .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+        .map((value) =>
+          String(value || "")
+            .replace(/\s+/g, " ")
+            .trim(),
+        )
         .filter(Boolean),
     );
     const candidates = [];
@@ -2482,7 +2283,11 @@
         element.getAttribute("data-label"),
       ];
       const label = rawLabels
-        .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+        .map((value) =>
+          String(value || "")
+            .replace(/\s+/g, " ")
+            .trim(),
+        )
         .find(
           (value) =>
             value &&
@@ -2494,12 +2299,9 @@
         );
       const parent = element.parentElement;
       const parentCanContainDot =
-        parent &&
-        parent !== header &&
-        !parent.querySelector("button, a, [role='button']");
+        parent && parent !== header && !parent.querySelector("button, a, [role='button']");
       const color =
-        nativePresenceColor(element) ||
-        (parentCanContainDot ? nativePresenceColor(parent) : "");
+        nativePresenceColor(element) || (parentCanContainDot ? nativePresenceColor(parent) : "");
       if (!label && !color) {
         return;
       }
@@ -2559,10 +2361,7 @@
     }
 
     header.classList.add("dec-slack-conversation-header");
-    title.classList.add(
-      "dec-slack-conversation-title",
-      "dec-slack-native-title-hidden",
-    );
+    title.classList.add("dec-slack-conversation-title", "dec-slack-native-title-hidden");
 
     const profile = directConversationProfileFromHeader();
     const rawTitle = String(title.textContent || "").trim();
@@ -2580,9 +2379,7 @@
     if (!profile) {
       header
         .querySelectorAll(".dec-slack-native-presence-hidden")
-        .forEach((element) =>
-          element.classList.remove("dec-slack-native-presence-hidden"),
-        );
+        .forEach((element) => element.classList.remove("dec-slack-native-presence-hidden"));
     }
     const headerContent = header.querySelector(".header") || header;
     let titleCard = header.querySelector(
@@ -2608,17 +2405,10 @@
       headerContent.appendChild(titleCard);
     }
 
-    titleCard.querySelector(".dec-slack-conversation-title-name").textContent =
-      visibleTitle;
-    const statusLine = titleCard.querySelector(
-      ".dec-slack-conversation-presence",
-    );
-    const statusText = titleCard.querySelector(
-      ".dec-slack-conversation-presence-text",
-    );
-    const statusDot = titleCard.querySelector(
-      ".dec-slack-conversation-presence-dot",
-    );
+    titleCard.querySelector(".dec-slack-conversation-title-name").textContent = visibleTitle;
+    const statusLine = titleCard.querySelector(".dec-slack-conversation-presence");
+    const statusText = titleCard.querySelector(".dec-slack-conversation-presence-text");
+    const statusDot = titleCard.querySelector(".dec-slack-conversation-presence-dot");
     statusLine.hidden = !presence;
     delete statusLine.dataset.status;
     statusText.textContent = presence;
@@ -2627,16 +2417,11 @@
     } else {
       statusDot.style.removeProperty("background-color");
     }
-    titleCard.setAttribute(
-      "aria-label",
-      presence ? `${visibleTitle}, ${presence}` : visibleTitle,
-    );
+    titleCard.setAttribute("aria-label", presence ? `${visibleTitle}, ${presence}` : visibleTitle);
     titleCard.onclick = () => title.click();
 
     const actionCandidates = [
-      ...new Set(
-        header.querySelectorAll("button, a.btn, [role='button'], .btn"),
-      ),
+      ...new Set(header.querySelectorAll("button, a.btn, [role='button'], .btn")),
     ].filter(
       (control) =>
         control !== title &&
@@ -2646,10 +2431,7 @@
         !control.closest(".dropdown-menu, [role='menu']"),
     );
     const actionButtons = actionCandidates.filter(
-      (control) =>
-        !actionCandidates.some(
-          (other) => other !== control && other.contains(control),
-        ),
+      (control) => !actionCandidates.some((other) => other !== control && other.contains(control)),
     );
     actionButtons.forEach((button) => {
       button.classList.add("dec-slack-conversation-action");
@@ -2663,10 +2445,7 @@
       actionContainer.className = "dec-slack-conversation-actions";
       actionContainer.dataset.decCreated = "true";
       actionContainer.setAttribute("role", "toolbar");
-      actionContainer.setAttribute(
-        "aria-label",
-        "Actions de la conversation",
-      );
+      actionContainer.setAttribute("aria-label", "Actions de la conversation");
       headerContent.appendChild(actionContainer);
     }
 
@@ -2687,8 +2466,7 @@
 
   function applyProfileToAvatar(avatar, profile, fallbackName, extension) {
     const imageUrl = profile?.imageUrl || "";
-    const initials =
-      profile?.initials || initialsFromName(profile?.name || fallbackName);
+    const initials = profile?.initials || initialsFromName(profile?.name || fallbackName);
     const profileKey = `${extension}|${imageUrl}|${initials}`;
 
     if (avatar.dataset.profileKey === profileKey) {
@@ -2725,7 +2503,9 @@
     if (!text || text.length > 180) {
       return false;
     }
-    return /\b(?:typing|is typing|are typing|ecrit|ecrivent|en train d'ecrire|en cours d'ecriture|redige|redigent|redaction en cours)\s*(?:\.{2,3}|…)?$/.test(text);
+    return /\b(?:typing|is typing|are typing|ecrit|ecrivent|en train d'ecrire|en cours d'ecriture|redige|redigent|redaction en cours)\s*(?:\.{2,3}|…)?$/.test(
+      text,
+    );
   }
 
   function nativeTypingElementText(element) {
@@ -2742,38 +2522,33 @@
   function activeConversationChatItem() {
     const directProfile = directConversationProfileFromHeader();
     const nativeTitle = String(
-      document
-        .querySelector("chat-messages-header [data-qa='chat-name'], chat-messages-header #showParticipants")
-        ?.textContent || "",
+      document.querySelector(
+        "chat-messages-header [data-qa='chat-name'], chat-messages-header #showParticipants",
+      )?.textContent || "",
     ).trim();
     const expectedLabels = [
       nativeTitle,
-      directProfile
-        ? `${directProfile.name} ${directProfile.extension}`
-        : "",
+      directProfile ? `${directProfile.name} ${directProfile.extension}` : "",
       directProfile?.name,
     ]
       .filter(Boolean)
       .map(normalizedTypingText);
     const items = [...document.querySelectorAll("chat-item")];
-    const routeId = String(
-      window.location.hash.match(/^#\/chat\/([^/?#]+)/)?.[1] || "",
-    );
+    const routeId = String(window.location.hash.match(/^#\/chat\/([^/?#]+)/)?.[1] || "");
     const routeFragment = routeId ? `/chat/${routeId}` : "";
     const routeItem = routeFragment
       ? items.find((item) =>
-          [
-            item,
-            ...item.querySelectorAll(
-              "[href], [routerlink], [ng-reflect-router-link]",
-            ),
-          ].some(
+          [item, ...item.querySelectorAll("[href], [routerlink], [ng-reflect-router-link]")].some(
             (element) =>
               [
                 element.getAttribute("href"),
                 element.getAttribute("routerlink"),
                 element.getAttribute("ng-reflect-router-link"),
-              ].some((value) => String(value || "").split(/[?#]/).includes(routeFragment)),
+              ].some((value) =>
+                String(value || "")
+                  .split(/[?#]/)
+                  .includes(routeFragment),
+              ),
           ),
         )
       : null;
@@ -2790,12 +2565,8 @@
       }) ||
       items.find((item) =>
         Boolean(
-          item.matches(
-            ".active, .selected, [aria-current='page'], [data-selected='true']",
-          ) ||
-            item.closest(
-              ".active, .selected, [aria-current='page'], [data-selected='true']",
-            ),
+          item.matches(".active, .selected, [aria-current='page'], [data-selected='true']") ||
+            item.closest(".active, .selected, [aria-current='page'], [data-selected='true']"),
         ),
       ) ||
       null
@@ -2813,9 +2584,7 @@
     if (activeItem) {
       candidates.add(activeItem);
     }
-    activeItem?.querySelectorAll("*").forEach((element) =>
-      candidates.add(element),
-    );
+    activeItem?.querySelectorAll("*").forEach((element) => candidates.add(element));
     const matches = [...candidates].filter(
       (element) =>
         !element.closest(`#${TYPING_INDICATOR_ID}`) &&
@@ -2826,10 +2595,7 @@
     /* Ne conserve que le nœud le plus précis portant le texte. Sans ce filtre,
        toute la barre d'en-tête pourrait être masquée avec son enfant natif. */
     return matches.filter(
-      (element) =>
-        !matches.some(
-          (other) => other !== element && element.contains(other),
-        ),
+      (element) => !matches.some((other) => other !== element && element.contains(other)),
     );
   }
 
@@ -2859,24 +2625,15 @@
       .forEach((nameElement) => {
         const fullName = String(nameElement.textContent || "").trim();
         const extension = extensionFromText(fullName);
-        if (
-          !extension ||
-          (restrictToCurrentParticipants &&
-            !currentParticipants.has(extension))
-        ) {
+        if (!extension || (restrictToCurrentParticipants && !currentParticipants.has(extension))) {
           return;
         }
 
-        const name = fullName
-          .replace(new RegExp(`\\s*${extension}\\s*$`), "")
-          .trim();
+        const name = fullName.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim();
         const known = candidates.get(extension);
-        const avatar = nameElement.parentElement?.querySelector(
-          `.${AVATAR_CLASS}`,
-        );
+        const avatar = nameElement.parentElement?.querySelector(`.${AVATAR_CLASS}`);
         const imageUrl =
-          known?.imageUrl ||
-          imageUrlFromCssBackground(avatar?.style.backgroundImage);
+          known?.imageUrl || imageUrlFromCssBackground(avatar?.style.backgroundImage);
         candidates.set(extension, {
           extension,
           name: known?.name || name,
@@ -2890,9 +2647,7 @@
 
     return [...candidates.values()].filter(
       (profile) =>
-        profile?.extension &&
-        profile.extension !== currentOwnProfile?.extension &&
-        profile.name,
+        profile?.extension && profile.extension !== currentOwnProfile?.extension && profile.name,
     );
   }
 
@@ -2906,21 +2661,17 @@
       return [directProfile];
     }
 
-    const combinedText = normalizedTypingText(
-      elements.map(nativeTypingElementText).join(" "),
-    );
+    const combinedText = normalizedTypingText(elements.map(nativeTypingElementText).join(" "));
     const candidates = typingProfileCandidates(profiles);
     const matchedExtensions = new Set();
 
     elements.forEach((element) => {
-      element
-        .querySelectorAll("app-avatar img[alt], img.avatar-content[alt]")
-        .forEach((image) => {
-          const extension = String(image.getAttribute("alt") || "").trim();
-          if (/^\d{1,5}$/.test(extension)) {
-            matchedExtensions.add(extension);
-          }
-        });
+      element.querySelectorAll("app-avatar img[alt], img.avatar-content[alt]").forEach((image) => {
+        const extension = String(image.getAttribute("alt") || "").trim();
+        if (/^\d{1,5}$/.test(extension)) {
+          matchedExtensions.add(extension);
+        }
+      });
     });
 
     const firstNameCounts = new Map();
@@ -2935,13 +2686,8 @@
     candidates.forEach((profile) => {
       const normalizedName = normalizedTypingText(profile.name);
       const firstName = normalizedName.split(" ")[0];
-      const escapedExtension = String(profile.extension).replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&",
-      );
-      const fullNamePosition = normalizedName
-        ? combinedText.indexOf(normalizedName)
-        : -1;
+      const escapedExtension = String(profile.extension).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const fullNamePosition = normalizedName ? combinedText.indexOf(normalizedName) : -1;
       const uniqueFirstNamePosition =
         firstName && firstNameCounts.get(firstName) === 1
           ? combinedText.search(
@@ -2953,11 +2699,9 @@
       const extensionPosition = combinedText.search(
         new RegExp(`(?:^|\\D)${escapedExtension}(?:\\D|$)`),
       );
-      const positions = [
-        fullNamePosition,
-        uniqueFirstNamePosition,
-        extensionPosition,
-      ].filter((position) => position >= 0);
+      const positions = [fullNamePosition, uniqueFirstNamePosition, extensionPosition].filter(
+        (position) => position >= 0,
+      );
       if (positions.length > 0) {
         matchedExtensions.add(profile.extension);
         matchPosition.set(profile.extension, Math.min(...positions));
@@ -2976,9 +2720,10 @@
   function ensureTypingIndicator() {
     const messages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
     const lastMessage = messages.at(-1) || null;
-    const modern = document.documentElement.classList.contains('dec-slack-ui-v2');
-    const host = modern ? lastMessage : lastMessage?.parentElement;
-    if (!lastMessage || !host) {
+    const modern = document.documentElement.classList.contains("dec-slack-ui-v2");
+    const main = modern ? document.querySelector("app-chat-messages .chat-massages-main") : null;
+    const host = modern ? main?.parentElement : lastMessage?.parentElement;
+    if (!host || (!modern && !lastMessage)) {
       document.getElementById(TYPING_INDICATOR_ID)?.remove();
       return null;
     }
@@ -3002,13 +2747,9 @@
       indicator.append(avatars, dots);
     }
 
-    if (
-      indicator.parentElement !== host ||
-      lastMessage.nextSibling !== indicator
-    ) {
-      if (modern) {
-        if (indicator.parentElement !== host) host.appendChild(indicator);
-      } else host.insertBefore(indicator, lastMessage.nextSibling);
+    const previous = modern ? main : lastMessage;
+    if (indicator.parentElement !== host || previous.nextSibling !== indicator) {
+      host.insertBefore(indicator, previous.nextSibling);
     }
     return indicator;
   }
@@ -3017,13 +2758,8 @@
     let element = message?.parentElement || null;
     while (element && element !== document.body) {
       const style = window.getComputedStyle(element);
-      const canScrollVertically = /^(auto|scroll|overlay)$/.test(
-        style.overflowY,
-      );
-      if (
-        canScrollVertically &&
-        element.scrollHeight > element.clientHeight + 1
-      ) {
+      const canScrollVertically = /^(auto|scroll|overlay)$/.test(style.overflowY);
+      if (canScrollVertically && element.scrollHeight > element.clientHeight + 1) {
         return element;
       }
       element = element.parentElement;
@@ -3045,8 +2781,7 @@
       /* 3CX marque le fil comme lu au passage du vrai dernier message dans la
          zone visible. On ne force ce recalcul que si l'utilisateur est deja
          au bas du fil, afin de ne jamais le deplacer pendant une relecture. */
-      const distanceFromBottom =
-        scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+      const distanceFromBottom = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
       if (distanceFromBottom > 80) {
         return;
       }
@@ -3062,10 +2797,16 @@
       return false;
     }
 
-    const referenceMessage =
-      indicator.previousElementSibling?.matches?.(MESSAGE_SELECTOR)
-        ? indicator.previousElementSibling
-        : [...document.querySelectorAll(MESSAGE_SELECTOR)].at(-1) || null;
+    if (document.documentElement.classList.contains("dec-slack-ui-v2")) {
+      // La place réservée reste identique, visible ou non.
+      if (!indicator.hidden) indicator.hidden = true;
+      if (indicator.hasAttribute("aria-label")) indicator.removeAttribute("aria-label");
+      return true;
+    }
+
+    const referenceMessage = indicator.previousElementSibling?.matches?.(MESSAGE_SELECTOR)
+      ? indicator.previousElementSibling
+      : [...document.querySelectorAll(MESSAGE_SELECTOR)].at(-1) || null;
     indicator.remove();
     refreshNativeReadTracking(referenceMessage);
     return true;
@@ -3074,13 +2815,11 @@
   function enhanceTypingIndicator(profiles) {
     const elements = nativeTypingElements();
     const activeElements = new Set(elements);
-    document
-      .querySelectorAll(`.${HIDDEN_NATIVE_TYPING_CLASS}`)
-      .forEach((element) => {
-        if (!activeElements.has(element)) {
-          element.classList.remove(HIDDEN_NATIVE_TYPING_CLASS);
-        }
-      });
+    document.querySelectorAll(`.${HIDDEN_NATIVE_TYPING_CLASS}`).forEach((element) => {
+      if (!activeElements.has(element)) {
+        element.classList.remove(HIDDEN_NATIVE_TYPING_CLASS);
+      }
+    });
 
     const typingProfiles = profilesFromTypingElements(elements, profiles);
     if (elements.length === 0 || typingProfiles.length === 0) {
@@ -3105,36 +2844,25 @@
     });
     const profileKey = typingProfiles
       .map(
-        (profile) =>
-          `${profile.extension}|${profile.name}|${profile.imageUrl}|${profile.initials}`,
+        (profile) => `${profile.extension}|${profile.name}|${profile.imageUrl}|${profile.initials}`,
       )
       .join(";");
 
     if (indicator.dataset.decTypingProfiles !== profileKey) {
       indicator.dataset.decTypingProfiles = profileKey;
-      const avatarContainer = indicator.querySelector(
-        ".dec-slack-typing-avatars",
-      );
+      const avatarContainer = indicator.querySelector(".dec-slack-typing-avatars");
       const avatars = typingProfiles.map((profile) => {
         const avatar = document.createElement("span");
         avatar.className = "dec-slack-typing-avatar";
         avatar.setAttribute("aria-hidden", "true");
-        applyProfileToAvatar(
-          avatar,
-          profile,
-          profile.name,
-          profile.extension,
-        );
+        applyProfileToAvatar(avatar, profile, profile.name, profile.extension);
         return avatar;
       });
       avatarContainer.replaceChildren(...avatars);
     }
 
     const names = typingProfiles.map((profile) => profile.name);
-    const label =
-      names.length === 1
-        ? `${names[0]} écrit…`
-        : `${names.join(", ")} écrivent…`;
+    const label = names.length === 1 ? `${names[0]} écrit…` : `${names.join(", ")} écrivent…`;
     indicator.setAttribute("aria-label", label);
     indicator.hidden = false;
   }
@@ -3169,22 +2897,17 @@
             }
           : knownProfile;
     } else {
-      const startsMessageGroup = messageInner.querySelector(
-        ":scope > .message-text.new-sender",
-      );
+      const startsMessageGroup = messageInner.querySelector(":scope > .message-text.new-sender");
       if (!startsMessageGroup) {
         return;
       }
 
-      avatarProfile = ownMessage
-        ? currentOwnProfile
-        : directConversationProfileFromHeader();
+      avatarProfile = ownMessage ? currentOwnProfile : directConversationProfileFromHeader();
       if (!avatarProfile) {
         return;
       }
       visibleName = avatarProfile.name || (ownMessage ? "Moi" : "Interlocuteur");
-      extension =
-        avatarProfile.extension || (ownMessage ? "self" : "contact");
+      extension = avatarProfile.extension || (ownMessage ? "self" : "contact");
     }
 
     let avatar = messageInner.querySelector(`:scope > .${AVATAR_CLASS}`);
@@ -3193,12 +2916,7 @@
       messageInner.prepend(avatar);
     }
 
-    applyProfileToAvatar(
-      avatar,
-      avatarProfile,
-      visibleName.replace(/\s*\d+\s*$/, ""),
-      extension,
-    );
+    applyProfileToAvatar(avatar, avatarProfile, visibleName.replace(/\s*\d+\s*$/, ""), extension);
   }
 
   function receiptLooksRead(receipt) {
@@ -3276,19 +2994,14 @@
       return /(?:check|done)/i.test(value) && isRenderedInsideReceipt(node);
     });
     const leafCheckIcons = checkIcons.filter(
-      (node) =>
-        !checkIcons.some(
-          (other) => other !== node && node.contains(other),
-        ),
+      (node) => !checkIcons.some((other) => other !== node && node.contains(other)),
     );
     if (leafCheckIcons.length >= 2) {
       return true;
     }
 
     const visibleShapes = nodes.filter(
-      (node) =>
-        node.matches?.("path, polyline, polygon, line") &&
-        isRenderedInsideReceipt(node),
+      (node) => node.matches?.("path, polyline, polygon, line") && isRenderedInsideReceipt(node),
     );
     if (visibleShapes.length >= 2) {
       return true;
@@ -3312,11 +3025,9 @@
         const style = window.getComputedStyle(node, pseudo);
         const content = String(style.content || "");
         const hasContent = !/^(?:none|normal|""|'')$/i.test(content);
-        const hasImage = [
-          style.backgroundImage,
-          style.maskImage,
-          style.webkitMaskImage,
-        ].some((value) => value && value !== "none");
+        const hasImage = [style.backgroundImage, style.maskImage, style.webkitMaskImage].some(
+          (value) => value && value !== "none",
+        );
         if (
           style.display !== "none" &&
           style.visibility !== "hidden" &&
@@ -3333,31 +3044,31 @@
 
   function receiptVisualSignature(receipt) {
     const clone = receipt.cloneNode(true);
-    clone
-      .querySelectorAll("[data-dec-created], [data-dec-read-profile]")
-      .forEach((element) => {
-        delete element.dataset.decCreated;
-        delete element.dataset.decReadProfile;
-      });
+    clone.querySelectorAll("[data-dec-created], [data-dec-read-profile]").forEach((element) => {
+      delete element.dataset.decCreated;
+      delete element.dataset.decReadProfile;
+    });
     [clone, ...clone.querySelectorAll("*")].forEach((element) => {
       [...element.classList]
         .filter((className) => className.startsWith("dec-slack-"))
         .forEach((className) => element.classList.remove(className));
     });
     const renderedSignature = [receipt, ...receipt.querySelectorAll("*")]
-      .flatMap((element) => [null, "::before", "::after"].map((pseudo) => {
-        const style = window.getComputedStyle(element, pseudo);
-        return [
-          pseudo || "self",
-          style.content,
-          style.backgroundImage,
-          style.maskImage,
-          style.webkitMaskImage,
-          style.width,
-          style.height,
-          style.fontFamily,
-        ].join(":");
-      }))
+      .flatMap((element) =>
+        [null, "::before", "::after"].map((pseudo) => {
+          const style = window.getComputedStyle(element, pseudo);
+          return [
+            pseudo || "self",
+            style.content,
+            style.backgroundImage,
+            style.maskImage,
+            style.webkitMaskImage,
+            style.width,
+            style.height,
+            style.fontFamily,
+          ].join(":");
+        }),
+      )
       .join(";");
     return [
       receipt.parentElement?.className,
@@ -3402,10 +3113,8 @@
     const parent = receipt.parentElement;
     const messageInner = receipt.closest(".message-inner");
     const message = receipt.closest(MESSAGE_SELECTOR);
-    const nativeState = (element) => [
-      nativeClassSignature(element),
-      nativeAttributeSignature(element),
-    ].join(":");
+    const nativeState = (element) =>
+      [nativeClassSignature(element), nativeAttributeSignature(element)].join(":");
 
     /* innerHTML capture les changements d'icône natifs (simple/double check)
        sans forcer de recalcul de style. Les classes injectées par le thème sont
@@ -3461,8 +3170,7 @@
   function ensureSentReceiptCopy(receipt, host) {
     let copy = Array.from(host.children).find(
       (child) =>
-        child.classList.contains(SENT_RECEIPT_COPY_CLASS) &&
-        child.dataset.decCreated === "true",
+        child.classList.contains(SENT_RECEIPT_COPY_CLASS) && child.dataset.decCreated === "true",
     );
     if (!copy) {
       copy = receipt.cloneNode(true);
@@ -3498,9 +3206,7 @@
     if (directConversation && records.some((record) => !record.isRead)) {
       const visibleMessages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
       const learnedReadSignatures = new Set(
-        records
-          .filter((record) => record.isRead)
-          .map((record) => record.signature),
+        records.filter((record) => record.isRead).map((record) => record.signature),
       );
 
       const messagesBeforeContactReply = new WeakSet();
@@ -3528,21 +3234,15 @@
     const latestRead = readRecords.at(-1) || null;
     const latestMessage = latestRead?.message || null;
     const latestReceipt = latestRead?.receipt || null;
-    const directProfile = latestRead
-      ? directConversationProfileFromHeader()
-      : null;
-    const portraitHost = latestMessage
-      ? fullWidthReceiptHost(latestMessage)
-      : null;
+    const directProfile = latestRead ? directConversationProfileFromHeader() : null;
+    const portraitHost = latestMessage ? fullWidthReceiptHost(latestMessage) : null;
     const validSentHosts = new Set();
 
-    document
-      .querySelectorAll(`${MESSAGE_SELECTOR}.${LATEST_READ_CLASS}`)
-      .forEach((message) => {
-        if (message !== latestMessage) {
-          message.classList.remove(LATEST_READ_CLASS);
-        }
-      });
+    document.querySelectorAll(`${MESSAGE_SELECTOR}.${LATEST_READ_CLASS}`).forEach((message) => {
+      if (message !== latestMessage) {
+        message.classList.remove(LATEST_READ_CLASS);
+      }
+    });
     latestMessage?.classList.add(LATEST_READ_CLASS);
 
     records.forEach(({ receipt, message, isRead }) => {
@@ -3553,18 +3253,12 @@
 
       if (isRead) {
         receipt.classList.remove(HIDDEN_SENT_RECEIPT_CLASS);
-        receipt.classList.toggle(
-          REDUNDANT_READ_RECEIPT_CLASS,
-          receipt !== latestReceipt,
-        );
+        receipt.classList.toggle(REDUNDANT_READ_RECEIPT_CLASS, receipt !== latestReceipt);
         Array.from(host.children)
           .filter((child) => child.classList.contains(SENT_RECEIPT_COPY_CLASS))
           .forEach((copy) => copy.remove());
       } else {
-        receipt.classList.remove(
-          HIDDEN_READ_RECEIPT_CLASS,
-          REDUNDANT_READ_RECEIPT_CLASS,
-        );
+        receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS, REDUNDANT_READ_RECEIPT_CLASS);
         ensureSentReceiptCopy(receipt, host);
         validSentHosts.add(host);
       }
@@ -3578,13 +3272,11 @@
         }
       });
 
-    document
-      .querySelectorAll(`delivered-check.${HIDDEN_READ_RECEIPT_CLASS}`)
-      .forEach((receipt) => {
-        if (receipt !== latestReceipt || !directProfile) {
-          receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS);
-        }
-      });
+    document.querySelectorAll(`delivered-check.${HIDDEN_READ_RECEIPT_CLASS}`).forEach((receipt) => {
+      if (receipt !== latestReceipt || !directProfile) {
+        receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS);
+      }
+    });
 
     document
       .querySelectorAll(`.${READ_AVATAR_CLASS}[data-dec-created="true"]`)
@@ -3605,9 +3297,7 @@
     latestReceipt.classList.add(HIDDEN_READ_RECEIPT_CLASS);
 
     let portrait = Array.from(portraitHost.children).find(
-      (child) =>
-        child.classList.contains(READ_AVATAR_CLASS) &&
-        child.dataset.decCreated === "true",
+      (child) => child.classList.contains(READ_AVATAR_CLASS) && child.dataset.decCreated === "true",
     );
     if (!portrait) {
       portrait = document.createElement("span");
@@ -3684,7 +3374,8 @@
   function originalUrlForPreview(image, sessionId) {
     const filename =
       image.closest("a[download]")?.getAttribute("download") ||
-      (image.closest('app-chat-message-file-preview') ? image.getAttribute('title') : '') || "";
+      (image.closest("app-chat-message-file-preview") ? image.getAttribute("title") : "") ||
+      "";
     if (!/\.(?:png|webp|gif)$/i.test(filename)) {
       return "";
     }
@@ -3698,9 +3389,7 @@
     }
 
     try {
-      const originalUrl = new URL(
-        previewUrl.replace(/\.preview(?:[?#].*)?$/, ""),
-      );
+      const originalUrl = new URL(previewUrl.replace(/\.preview(?:[?#].*)?$/, ""));
       if (originalUrl.origin !== window.location.origin) {
         return "";
       }
@@ -3721,10 +3410,7 @@
     const probe = new Image();
     probe.decoding = "async";
     probe.onload = () => {
-      if (
-        image.isConnected &&
-        image.dataset.decOriginalPreviewUrl === originalUrl
-      ) {
+      if (image.isConnected && image.dataset.decOriginalPreviewUrl === originalUrl) {
         image.srcset = "";
         image.src = originalUrl;
         image.dataset.decOriginalPreviewState = "ready";
@@ -3770,7 +3456,7 @@
     document
       .querySelectorAll(
         'chat-message file-preview a[download] img[src*="/MyPhone/downloadChatFile/"][src*=".preview"], ' +
-        'chat-message app-chat-message-file-preview img[src*="/MyPhone/downloadChatFile/"][src*=".preview"]',
+          'chat-message app-chat-message-file-preview img[src*="/MyPhone/downloadChatFile/"][src*=".preview"]',
       )
       .forEach((image) => {
         const originalUrl = originalUrlForPreview(image, sessionId);
@@ -3813,15 +3499,11 @@
   }
 
   function replyButtonFromToast(toast) {
-    return toast?.querySelector(
-      '[data-qa="reply-in-chat"], button.btn-primary',
-    );
+    return toast?.querySelector('[data-qa="reply-in-chat"], button.btn-primary');
   }
 
   function ignoreButtonFromToast(toast) {
-    return toast?.querySelector(
-      '[data-qa="ignore-chat"], button.btn-gray, button.btn-border',
-    );
+    return toast?.querySelector('[data-qa="ignore-chat"], button.btn-gray, button.btn-border');
   }
 
   function positionChatToastStack() {
@@ -3835,44 +3517,29 @@
       .forEach((element) => {
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
-        if (
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          rect.height > 0
-        ) {
+        if (style.display !== "none" && style.visibility !== "hidden" && rect.height > 0) {
           top = Math.max(top, rect.bottom + 12);
         }
       });
     const modernToastHost = document.querySelector("chat-toast-container");
-    if (
-      modernToastHost &&
-      document.documentElement.classList.contains("dec-slack-ui-v2")
-    ) {
-      modernToastHost.style.setProperty(
-        "--dec-slack-chat-toast-host-top",
-        `${Math.ceil(top)}px`,
-      );
+    if (modernToastHost && document.documentElement.classList.contains("dec-slack-ui-v2")) {
+      modernToastHost.style.setProperty("--dec-slack-chat-toast-host-top", `${Math.ceil(top)}px`);
       return;
     }
 
     let nextTop = Math.ceil(top);
-    document
-      .querySelectorAll(`${CHAT_TOAST_SELECTOR}.dec-slack-chat-toast`)
-      .forEach((toast) => {
-        if (!toast.isConnected) {
-          return;
-        }
-        const style = window.getComputedStyle(toast);
-        if (style.display === "none" || style.visibility === "hidden") {
-          return;
-        }
+    document.querySelectorAll(`${CHAT_TOAST_SELECTOR}.dec-slack-chat-toast`).forEach((toast) => {
+      if (!toast.isConnected) {
+        return;
+      }
+      const style = window.getComputedStyle(toast);
+      if (style.display === "none" || style.visibility === "hidden") {
+        return;
+      }
 
-        toast.style.setProperty(
-          "--dec-slack-chat-toast-top",
-          `${nextTop}px`,
-        );
-        nextTop += Math.max(toast.getBoundingClientRect().height, 78) + 12;
-      });
+      toast.style.setProperty("--dec-slack-chat-toast-top", `${nextTop}px`);
+      nextTop += Math.max(toast.getBoundingClientRect().height, 78) + 12;
+    });
   }
 
   function scheduleChatToastPositioning() {
@@ -3908,10 +3575,7 @@
     toast.classList.add("dec-slack-chat-toast");
     toast.setAttribute("role", "button");
     toast.setAttribute("tabindex", "0");
-    toast.setAttribute(
-      "aria-label",
-      "Ouvrir la conversation de cette notification",
-    );
+    toast.setAttribute("aria-label", "Ouvrir la conversation de cette notification");
 
     const closeButton = document.createElement("button");
     closeButton.type = "button";
@@ -4064,8 +3728,7 @@
         mutation.removedNodes.forEach((node) => {
           if (
             node.nodeType === Node.ELEMENT_NODE &&
-            (node.matches(CHAT_TOAST_SELECTOR) ||
-              node.querySelector(CHAT_TOAST_SELECTOR))
+            (node.matches(CHAT_TOAST_SELECTOR) || node.querySelector(CHAT_TOAST_SELECTOR))
           ) {
             toastLayoutChanged = true;
           }
@@ -4086,8 +3749,8 @@
   function enhanceVisibleMessages() {
     installAvatarStyles();
     ensureControls();
-    const modern = Boolean(document.querySelector('chat-component app-layout-type4'));
-    document.documentElement.classList.toggle('dec-slack-ui-v2', modern);
+    const modern = Boolean(document.querySelector("chat-component app-layout-type4"));
+    document.documentElement.classList.toggle("dec-slack-ui-v2", modern);
     if (modern) {
       enhanceModernChat();
       initialMessageScan = false;
@@ -4117,155 +3780,313 @@
     if (element && element.textContent !== value) element.textContent = value;
   }
 
-  function modernDecoration(parent, className, tag = 'span') {
-    let element = [...parent.children].find(child => child.classList.contains(className));
+  function modernDecoration(parent, className, tag = "span") {
+    let element = [...parent.children].find((child) => child.classList.contains(className));
     if (!element) {
       element = document.createElement(tag);
       element.className = className;
-      element.dataset.decCreated = 'true';
+      element.dataset.decCreated = "true";
       parent.appendChild(element);
     }
     return element;
   }
 
   function modernOwnProfile(profiles) {
-    const avatar = document.querySelector('app-header wc-account-menu app-avatar');
+    const avatar = document.querySelector("app-header wc-account-menu app-avatar");
     const image = avatar?.querySelector('img[data-qa="profile-image"]');
-    const extension = image?.getAttribute('alt') || '';
+    const extension = image?.getAttribute("alt") || "";
     const cached = readCachedOwnProfile();
     const known = profiles.get(extension) || (cached?.extension === extension ? cached : null);
     return {
       extension,
-      name: known?.name || 'Moi',
-      imageUrl: image?.src || '',
-      initials: avatar?.querySelector('.avatar-content:not(img)')?.textContent?.trim() || 'M',
+      name: known?.name || "Moi",
+      imageUrl: image?.src || "",
+      initials: avatar?.querySelector(".avatar-content:not(img)")?.textContent?.trim() || "M",
     };
   }
 
-  function enhanceModernHeader() {
-    const header = document.querySelector('chat-messages-header');
+  function enhanceModernHeader(contact = directConversationProfileFromHeader()) {
+    const header = document.querySelector("chat-messages-header");
     const title = header?.querySelector('[data-qa="chat-name"]');
     if (!title) return;
-    header.classList.add('dec-v2-header');
-    const identity = [...header.children].find(child => child.contains(title));
-    identity?.classList.add('dec-v2-native-identity');
-    const action = header.querySelector('[data-qa="show-menu"], [data-qa="add-user"], [data-qa="make-call"]');
-    const actions = action && [...header.children].find(child => child.contains(action));
-    if (actions !== identity) actions?.classList.add('dec-v2-actions');
-    const card = modernDecoration(header, 'dec-v2-title-card', 'button');
-    card.type = 'button';
+    header.classList.add("dec-v2-header");
+    const identity = [...header.children].find((child) => child.contains(title));
+    identity?.classList.add("dec-v2-native-identity");
+    const action = header.querySelector(
+      '[data-qa="show-menu"], [data-qa="add-user"], [data-qa="make-call"]',
+    );
+    const actions = action && [...header.children].find((child) => child.contains(action));
+    if (actions !== identity) actions?.classList.add("dec-v2-actions");
+    const card = modernDecoration(header, "dec-v2-title-card", "button");
+    card.type = "button";
     card.onclick = () => title.click();
-    const contact = directConversationProfileFromHeader();
-    modernText(modernDecoration(card, 'dec-v2-title'), contact?.name || title.textContent.trim());
-    const line = modernDecoration(card, 'dec-v2-presence');
+    modernText(modernDecoration(card, "dec-v2-title"), contact?.name || title.textContent.trim());
+    const line = modernDecoration(card, "dec-v2-presence");
     const description = header.querySelector('[data-qa="chat-description"]');
-    const label = contact ? description?.textContent.trim() || '' : '';
+    const label = contact ? description?.textContent.trim() || "" : "";
     line.hidden = !label || containsTypingText(label);
-    modernText(modernDecoration(line, 'dec-v2-presence-label'), label);
-    const dot = modernDecoration(line, 'dec-v2-presence-dot');
+    modernText(modernDecoration(line, "dec-v2-presence-label"), label);
+    const dot = modernDecoration(line, "dec-v2-presence-dot");
     const nativeDot = identity?.querySelector('[data-qa="status-indicator"]');
-    const color = nativeDot ? window.getComputedStyle(nativeDot).backgroundColor : '';
-    dot.hidden = !color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)';
+    const color = nativeDot ? window.getComputedStyle(nativeDot).backgroundColor : "";
+    dot.hidden = !color || color === "transparent" || color === "rgba(0, 0, 0, 0)";
     if (!dot.hidden && dot.style.backgroundColor !== color) dot.style.backgroundColor = color;
   }
 
-  function modernMessageRecords(profiles) {
-    const contact = directConversationProfileFromHeader();
+  function modernMessageRecords(profiles, contact = directConversationProfileFromHeader()) {
     let previousProfile = null;
-    return [...document.querySelectorAll('app-chat-messages chat-message')].map(message => {
-      const align = message.querySelector('.message-align');
-      if (!align) return null;
-      const nativeName = message.querySelector(
-        ':scope > .message-name, .message-row > .message-name, ' +
-          ':scope > .message-row > .sender-name',
-      );
-      const own =
-        align.classList.contains('sent-by-me') ||
-        nativeName?.classList.contains('sent-by-me');
-      const fullName = nativeName?.textContent.trim() || '';
-      const extension = extensionFromText(fullName);
-      const newSender = Boolean(
-        nativeName || message.querySelector('.message-content.new-sender'),
-      );
-      const boundary = message.previousElementSibling?.matches('.day-title');
-      const profile = own ? currentOwnProfile : contact ||
-        (extension ? profiles.get(extension) || {
-          extension, name: fullName.replace(/\s*\d+\s*$/, ''), imageUrl: '', initials: initialsFromName(fullName),
-        } : (!newSender && !boundary ? previousProfile : null));
-      previousProfile = profile;
-      const time = [...message.querySelectorAll('.message-data small')].find(el => /^\s*\d{1,2}:\d{2}\s*$/.test(el.textContent));
-      return { message, align, own, profile, time, boundary, newSender, nativeName,
-        key: own ? 'own' : profile?.extension || profile?.name || '' };
-    }).filter(Boolean);
+    return [...document.querySelectorAll("app-chat-messages chat-message")]
+      .map((message) => {
+        const align = message.querySelector(".message-align");
+        if (!align) return null;
+        const nativeName = message.querySelector(
+          ":scope > .message-name, .message-row > .message-name, " +
+            ":scope > .message-row > .sender-name",
+        );
+        const own = Boolean(
+          align.classList.contains("sent-by-me") || nativeName?.classList.contains("sent-by-me"),
+        );
+        const fullName = nativeName?.textContent.trim() || "";
+        const extension = extensionFromText(fullName);
+        const newSender = Boolean(
+          nativeName || message.querySelector(".message-content.new-sender"),
+        );
+        const boundary = message.previousElementSibling?.matches(".day-title");
+        const profile = own
+          ? currentOwnProfile
+          : contact ||
+            (extension
+              ? profiles.get(extension) || {
+                  extension,
+                  name: fullName.replace(/\s*\d+\s*$/, ""),
+                  imageUrl: "",
+                  initials: initialsFromName(fullName),
+                }
+              : !newSender && !boundary
+                ? previousProfile
+                : null);
+        previousProfile = profile;
+        const time = [...message.querySelectorAll(".message-data small")].find((el) =>
+          /^\s*\d{1,2}:\d{2}\s*$/.test(el.textContent),
+        );
+        return {
+          message,
+          align,
+          own,
+          profile,
+          time,
+          boundary,
+          newSender,
+          nativeName,
+          key: own ? "own" : profile?.extension || profile?.name || "",
+        };
+      })
+      .filter(Boolean);
   }
 
-  function enhanceModernReceipts(records) {
-    const contact = directConversationProfileFromHeader();
-    const receipts = records.map(record => ({...record,
-      receipt: record.message.querySelector('delivered-check:not([data-dec-created])'),
+  function enhanceModernReceipts(records, contact = directConversationProfileFromHeader()) {
+    const receipts = records.map((record) => ({
+      ...record,
+      receipt: record.message.querySelector("delivered-check:not([data-dec-created])"),
     }));
-    const read = receipt => receipt && [...receipt.querySelectorAll('[title], [aria-label]')]
-      .some(el => /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
-        (el.getAttribute('title') || el.getAttribute('aria-label') || '').trim()));
-    const latest = receipts.filter(r => r.own && read(r.receipt)).at(-1);
+    const read = (receipt) =>
+      receipt &&
+      [...receipt.querySelectorAll("[title], [aria-label]")].some((el) =>
+        /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
+          (el.getAttribute("title") || el.getAttribute("aria-label") || "").trim(),
+        ),
+      );
+    // En conversation directe, une réponse place aussi l'interlocuteur à ce
+    // point de l'historique. Un nouvel envoi non lu ne déplace pas son portrait.
+    const latest = receipts.filter((r) => (r.own && read(r.receipt)) || (contact && !r.own)).at(-1);
     receipts.forEach(({ message, own, receipt }) => {
       message.classList.remove(LATEST_READ_CLASS);
-      message.querySelectorAll(`.${READ_AVATAR_CLASS}, .${SENT_RECEIPT_COPY_CLASS}`).forEach(el => el.remove());
-      if (!receipt) return;
-      receipt.classList.remove(HIDDEN_READ_RECEIPT_CLASS, HIDDEN_SENT_RECEIPT_CLASS, REDUNDANT_READ_RECEIPT_CLASS);
-      const isRead = read(receipt);
-      receipt.classList.toggle('dec-v2-receipt-hidden', !own || (isRead && message !== latest?.message));
-      let portrait = message.querySelector(':scope > .dec-v2-read-avatar');
+      message
+        .querySelectorAll(`.${READ_AVATAR_CLASS}, .${SENT_RECEIPT_COPY_CLASS}`)
+        .forEach((el) => el.remove());
+      if (receipt) {
+        receipt.classList.remove(
+          HIDDEN_READ_RECEIPT_CLASS,
+          HIDDEN_SENT_RECEIPT_CLASS,
+          REDUNDANT_READ_RECEIPT_CLASS,
+        );
+        const isRead = read(receipt);
+        receipt.classList.toggle(
+          "dec-v2-receipt-hidden",
+          !own || (isRead && message !== latest?.message),
+        );
+      }
+      let portrait = message.querySelector(":scope > .dec-v2-read-avatar");
       if (message === latest?.message && contact) {
-        receipt.classList.add('dec-v2-receipt-hidden');
-        portrait = portrait || modernDecoration(message, 'dec-v2-read-avatar');
+        receipt?.classList.add("dec-v2-receipt-hidden");
+        portrait = portrait || modernDecoration(message, "dec-v2-read-avatar");
         applyProfileToAvatar(portrait, contact, contact.name, contact.extension);
-        portrait.setAttribute('aria-label', `Lu par ${contact.name}`);
-        portrait.setAttribute('role', 'img');
+        portrait.setAttribute("aria-label", `Lu par ${contact.name}`);
+        portrait.setAttribute("role", "img");
       } else portrait?.remove();
     });
   }
 
+  function decorateModernMessage({ message, own, profile, time, nativeName }, start, end) {
+    message.classList.add("dec-v2-message");
+    message.classList.toggle("dec-v2-own", own);
+    message.classList.toggle("dec-v2-group-start", start);
+    message.classList.toggle("dec-v2-group-end", end);
+    // Un auteur de groupe non identifié conserve son rendu natif.
+    message.classList.toggle("dec-v2-has-author", Boolean(profile));
+    nativeName?.parentElement?.classList.add("dec-v2-native-sender-row");
+    if (start && profile) {
+      const heading = modernDecoration(message, "dec-v2-message-heading");
+      modernText(modernDecoration(heading, "dec-v2-author"), profile.name);
+      modernText(modernDecoration(heading, "dec-v2-time"), time?.textContent.trim() || "");
+      const portrait = modernDecoration(message, "dec-v2-message-avatar");
+      applyProfileToAvatar(portrait, profile, profile.name, profile.extension);
+      portrait.setAttribute("aria-hidden", "true");
+    } else {
+      message.querySelector(":scope > .dec-v2-message-heading")?.remove();
+      message.querySelector(":scope > .dec-v2-message-avatar")?.remove();
+    }
+  }
+
   function enhanceModernChat() {
-    enhanceModernHeader();
+    ensureTypingIndicator();
+    const contact = directConversationProfileFromHeader();
+    enhanceModernHeader(contact);
     scheduleChatToastPositioning();
     const profiles = buildParticipantMap();
     currentOwnProfile = modernOwnProfile(profiles);
-    const records = modernMessageRecords(profiles);
+    const records = modernMessageRecords(profiles, contact);
     records.forEach((record, index) => {
-      const { message, own, profile, time, boundary, newSender, nativeName, key } = record;
+      const { message, boundary, newSender, key } = record;
       const previous = records[index - 1];
       const next = records[index + 1];
       const start = !previous || boundary || newSender || !key || previous.key !== key;
       const end = !next || next.boundary || next.newSender || !key || next.key !== key;
-      message.classList.add('dec-v2-message');
-      message.classList.toggle('dec-v2-own', own);
-      message.classList.toggle('dec-v2-group-start', start);
-      message.classList.toggle('dec-v2-group-end', end);
-      // Un auteur de groupe non identifié conserve son rendu natif.
-      message.classList.toggle('dec-v2-has-author', Boolean(profile));
-      nativeName?.parentElement?.classList.add('dec-v2-native-sender-row');
-      if (start && profile) {
-        const heading = modernDecoration(message, 'dec-v2-message-heading');
-        modernText(modernDecoration(heading, 'dec-v2-author'), profile.name);
-        modernText(modernDecoration(heading, 'dec-v2-time'), time?.textContent.trim() || '');
-        const portrait = modernDecoration(message, 'dec-v2-message-avatar');
-        applyProfileToAvatar(portrait, profile, profile.name, profile.extension);
-        portrait.setAttribute('aria-hidden', 'true');
-      } else {
-        message.querySelector(':scope > .dec-v2-message-heading')?.remove();
-        message.querySelector(':scope > .dec-v2-message-avatar')?.remove();
-      }
+      decorateModernMessage(record, start, end);
       markMessage(message, index >= records.length - 3);
     });
-    enhanceModernReceipts(records);
+    enhanceModernReceipts(records, contact);
     enhanceCustomEmojis();
     enhanceOriginalImagePreviews();
-    // Le HTML fourni ne contient pas le panneau des participants de groupe.
-    // Pas d'identité déduite d'un cache global en l'absence de cette preuve.
-    if (directConversationProfileFromHeader() || document.querySelector(PARTICIPANT_SELECTOR)) {
+    // Un groupe doit fournir des participants avant d'identifier qui écrit.
+    if (contact || document.querySelector(PARTICIPANT_SELECTOR)) {
       enhanceTypingIndicator(profiles);
-    } else document.getElementById(TYPING_INDICATOR_ID)?.remove();
+    } else removeTypingIndicator();
+    synchronizeModernScroll(records);
+  }
+
+  // Suit le bas après la décoration et le chargement des images, puis laisse
+  // l'utilisateur relire librement l'historique. Un seul suivi par conversation.
+  let modernScrollState = null;
+
+  function disposeModernScroll() {
+    const state = modernScrollState;
+    if (!state) return;
+    state.resizeObserver?.disconnect();
+    for (const [type, listener, capture = false] of state.listeners) {
+      state.scroller.removeEventListener(type, listener, capture);
+    }
+    modernScrollState = null;
+  }
+
+  function scheduleModernScroll(state) {
+    if (state.scheduled || !state.pinned) return;
+    state.scheduled = true;
+    window.requestAnimationFrame(() => {
+      state.scheduled = false;
+      if (
+        state !== modernScrollState ||
+        !state.pinned ||
+        !state.scroller.isConnected ||
+        document.hidden ||
+        state.key !== window.location.hash
+      )
+        return;
+      state.adjusting = true;
+      state.scroller.scrollTop = state.scroller.scrollHeight;
+      window.requestAnimationFrame(() => {
+        if (state === modernScrollState) state.adjusting = false;
+      });
+    });
+  }
+
+  function synchronizeModernScroll(records) {
+    const key = window.location.hash;
+    const scroller = document.querySelector("app-chat-messages .chat-massages-main > .scrollable");
+    if (!scroller || !/^#\/chat\/[^/?]+/.test(key)) {
+      disposeModernScroll();
+      return;
+    }
+    if (modernScrollState?.key !== key || modernScrollState.scroller !== scroller) {
+      disposeModernScroll();
+      const state = {
+        key,
+        scroller,
+        pinned: true,
+        scheduled: false,
+        adjusting: false,
+        settleUntil: performance.now() + 1500,
+        listeners: [],
+        observed: new Set(),
+      };
+      modernScrollState = state;
+      const distance = () => scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+      const release = () => {
+        state.pinned = false;
+        state.settleUntil = 0;
+      };
+      const listen = (type, listener) => {
+        scroller.addEventListener(type, listener, { passive: true });
+        state.listeners.push([type, listener]);
+      };
+      listen("wheel", (event) => {
+        if (event.deltaY < 0) release();
+      });
+      listen("touchmove", release);
+      listen("pointerdown", (event) => {
+        // Un clic sur le texte ne coupe pas le suivi, une prise de scrollbar oui.
+        if (event.target === scroller) release();
+      });
+      listen("keydown", (event) => {
+        if (
+          ["ArrowUp", "PageUp", "Home"].includes(event.key) ||
+          (event.key === " " && event.shiftKey)
+        )
+          release();
+      });
+      listen("scroll", () => {
+        if (state.adjusting) return;
+        if (performance.now() < state.settleUntil) {
+          scheduleModernScroll(state);
+          return;
+        }
+        state.pinned = distance() <= 4;
+      });
+      const onLoad = () => scheduleModernScroll(state);
+      scroller.addEventListener("load", onLoad, true);
+      state.listeners.push(["load", onLoad, true]);
+      // Les images changent de hauteur sans mutation DOM. Observer les enfants
+      // de la liste détecte ces changements sans rescanner à chaque mouvement.
+      if (typeof window.ResizeObserver === "function") {
+        state.resizeObserver = new window.ResizeObserver(() => scheduleModernScroll(state));
+        state.resizeObserver.observe(scroller);
+      }
+    }
+    const state = modernScrollState;
+    const children = new Set([...scroller.children]);
+    for (const child of state.observed) {
+      if (!children.has(child)) {
+        state.resizeObserver?.unobserve(child);
+        state.observed.delete(child);
+      }
+    }
+    for (const child of children) {
+      if (!state.observed.has(child)) {
+        state.resizeObserver?.observe(child);
+        state.observed.add(child);
+      }
+    }
+    if (records.length) scheduleModernScroll(state);
   }
 
   let updateScheduled = false;
@@ -4327,16 +4148,10 @@
       return true;
     }
 
-    const changedNodes = [
-      ...mutation.addedNodes,
-      ...mutation.removedNodes,
-    ];
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
     return (
       changedNodes.length === 0 ||
-      changedNodes.some(
-        (node) =>
-          !isInsideIgnoredUpdateArea(node) && !isUserscriptOwnedNode(node),
-      )
+      changedNodes.some((node) => !isInsideIgnoredUpdateArea(node) && !isUserscriptOwnedNode(node))
     );
   }
 
@@ -4361,6 +4176,7 @@
     // Le rechargement d'une conversation recrée des messages anciens :
     // ils ne doivent pas être pris pour de nouveaux messages entrants.
     suppressAnimationsUntil = performance.now() + 1200;
+    disposeModernScroll();
     scheduleUpdate();
   });
   document.addEventListener("visibilitychange", () => {
