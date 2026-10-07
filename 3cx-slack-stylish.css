@@ -3530,7 +3530,7 @@ html.dec-slack-ui-v2 .dec-v2-message.dec-v2-group-start.dec-v2-has-author .messa
 }
 
 html.dec-slack-ui-v2 .dec-v2-message img.dec-slack-custom-emoji {
-  width: 20px !important;
-  height: 20px !important;
+  width: 26px !important;
+  height: 26px !important;
   border-radius: 2px !important;
 }
