@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.8
+// @version      2.0.0-beta.9
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -2919,7 +2919,31 @@
     applyProfileToAvatar(avatar, avatarProfile, visibleName.replace(/\s*\d+\s*$/, ""), extension);
   }
 
+  function receiptHasReadMarker(receipt) {
+    if (!receipt) {
+      return false;
+    }
+
+    // Depuis la mise à jour 3CX, le double coche Lucide remplace le libellé « Vu ».
+    const readIconSelector = ".lucide-check-check, [lucideCheckCheck], [lucidecheckcheck]";
+    if (receipt.matches(readIconSelector) || receipt.querySelector(readIconSelector)) {
+      return true;
+    }
+
+    return [receipt, ...receipt.querySelectorAll("[title], [aria-label]")].some((node) =>
+      ["title", "aria-label"].some((attribute) =>
+        /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
+          (node.getAttribute(attribute) || "").trim(),
+        ),
+      ),
+    );
+  }
+
   function receiptLooksRead(receipt) {
+    if (receiptHasReadMarker(receipt)) {
+      return true;
+    }
+
     const nodes = [receipt, ...receipt.querySelectorAll("*")];
     const metadata = nodes
       .flatMap((node) => [
@@ -3889,13 +3913,7 @@
       ...record,
       receipt: record.message.querySelector("delivered-check:not([data-dec-created])"),
     }));
-    const read = (receipt) =>
-      receipt &&
-      [...receipt.querySelectorAll("[title], [aria-label]")].some((el) =>
-        /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
-          (el.getAttribute("title") || el.getAttribute("aria-label") || "").trim(),
-        ),
-      );
+    const read = receiptHasReadMarker;
     // En conversation directe, une réponse place aussi l'interlocuteur à ce
     // point de l'historique. Un nouvel envoi non lu ne déplace pas son portrait.
     const latest = receipts.filter((r) => (r.own && read(r.receipt)) || (contact && !r.own)).at(-1);
