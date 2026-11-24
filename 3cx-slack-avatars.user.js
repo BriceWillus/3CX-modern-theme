@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.18
+// @version      2.0.0-beta.19
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -4163,7 +4163,7 @@
         #${LIBRARY_PANEL_ID} .dec-library-tools { display:flex; gap:6px; flex-wrap:wrap; padding:8px 16px; }
         #${LIBRARY_PANEL_ID} input, #${LIBRARY_PANEL_ID} textarea { width:100%; color:inherit; background:var(--slack-hover,#ffffff0a); border:1px solid var(--slack-line,#56525b); border-radius:7px; padding:8px; font:inherit; }
         #${LIBRARY_PANEL_ID} .dec-library-tools button[aria-pressed='true'] { color:var(--slack-blue,#79b8ff); border-color:currentColor; }
-        #${LIBRARY_PANEL_ID} .dec-library-explorer-options { display:flex; justify-content:flex-end; width:100%; }
+        #${LIBRARY_PANEL_ID} .dec-library-explorer-options { display:flex; justify-content:flex-start; width:100%; }
         #${LIBRARY_PANEL_ID} .dec-library-explorer-toggle { display:inline-flex; align-items:center; gap:7px; padding:3px 0; border:0; background:transparent; color:var(--slack-muted,#b8b5bc); font-size:12px; }
         #${LIBRARY_PANEL_ID} .dec-library-switch-track { position:relative; display:block; width:28px; height:16px; border:1px solid currentColor; border-radius:99px; }
         #${LIBRARY_PANEL_ID} .dec-library-switch-track::after { content:""; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:currentColor; }
@@ -4172,6 +4172,8 @@
         #${LIBRARY_PANEL_ID} .dec-library-summary { margin:0; padding:2px 16px 10px; color:var(--slack-muted,#b8b5bc); font-size:12px; }
         #${LIBRARY_PANEL_ID} .dec-library-list { overflow:auto; flex:1; min-height:0; padding:0 12px 12px; overscroll-behavior:contain; }
         #${LIBRARY_PANEL_ID} .dec-library-card { padding:12px; margin:8px 0; border:1px solid var(--slack-line,#56525b); border-radius:9px; overflow-wrap:anywhere; }
+        #${LIBRARY_PANEL_ID} .dec-library-card-own { background:var(--dec-accent-own,rgba(74,21,75,.12)); }
+        #${LIBRARY_PANEL_ID} .dec-library-card-own:hover { background:var(--dec-accent-own-hover,rgba(74,21,75,.18)); }
         #${LIBRARY_PANEL_ID} .dec-library-meta { display:flex; align-items:flex-start; gap:8px; font-size:12px; color:var(--slack-muted,#b8b5bc); margin-bottom:7px; }
         #${LIBRARY_PANEL_ID} .dec-library-meta-label { flex:1; min-width:0; padding-top:4px; }
         #${LIBRARY_PANEL_ID} .dec-library-card-pin { display:grid; place-items:center; flex:0 0 26px; width:26px; height:26px; padding:4px; border:0; background:transparent; }
@@ -4328,6 +4330,7 @@
       count += favorites ? 1 : files.length+links.length+explorerLinks.length;
       const card = libraryElement("article","dec-library-card");
       card.dataset.entryId = entry.id;
+      card.classList.toggle("dec-library-card-own",Boolean(libraryAccount && String(entry.authorKey || "") === libraryAccount));
       const meta = libraryElement("div","dec-library-meta");
       meta.appendChild(libraryElement("span","dec-library-meta-label",`${entry.author} · ${entry.date} ${entry.time}${favorites && libraryAllChats ? ` · ${entry.chatTitle}` : ""}`));
       const pinned = libraryFavorites.some(item => item.id === entry.id);
