@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.17
+// @version      2.0.0-beta.18
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -53,6 +53,7 @@
   const LIBRARY_PANEL_ID = "dec-slack-message-library";
   const LIBRARY_STYLE_ID = "dec-slack-message-library-styles";
   const STORAGE_FAVORITES = "decSlackFavoritesV1";
+  const STORAGE_GALLERY_EXPLORER_LINKS = "decSlackGalleryExplorerLinks";
   const PIN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3 21 8l-4 1-3 5-1 4-7-7 4-1 5-3z"/><path d="m2 22 6-6"/></svg>';
   const UNPIN_ICON = PIN_ICON.replace("</svg>", '<path d="m3 3 18 18"/></svg>');
   const NOTE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6z"/><path d="m14 5 5 5"/></svg>';
@@ -146,6 +147,7 @@
   let libraryOpenTab = "";
   let librarySearch = "";
   let libraryFilter = "all";
+  let libraryShowExplorerLinks = readSetting(STORAGE_GALLERY_EXPLORER_LINKS,"false") === "true";
   let libraryAllChats = false;
   let libraryRevision = 0;
   let libraryReturnFocus = null;
@@ -3827,6 +3829,72 @@
     } catch { return null; }
   }
 
+  function libraryExplorerLink(value, label = "") {
+    if (typeof value !== "string") return null;
+    let candidate = value.trim();
+    if (/^file:/i.test(candidate)) {
+      try {
+        const url = new URL(candidate);
+        if (url.protocol !== "file:" || !url.hostname || url.search || url.hash) return null;
+        candidate = "\\\\" + url.hostname + decodeURIComponent(url.pathname).replace(/\//g,"\\");
+      } catch { return null; }
+    }
+    const match = candidate.match(/^\\\\([^\\/\s<>:"|?*]+)\\(.+)$/u);
+    if (!match || /^\.+$/.test(match[1]) || !match[2].split("\\")[0].trim() ||
+        /[\x00-\x1f<>:"/|?*]/u.test(match[2])) return null;
+    return {path:candidate,label:String(label || "").trim().slice(0,500),host:match[1]};
+  }
+
+  function libraryTextExplorerLinks(text) {
+    const value = String(text || "");
+    const starts = [...value.matchAll(/\\\\[^\\/\s<>:"|?*]+\\/gu)].slice(0,50);
+    const links = new Map();
+    for (let index=0;index<starts.length;index++) {
+      const match = starts[index];
+      if (match.index && /[\p{L}\p{N}_\\@]/u.test(value[match.index-1])) continue;
+      let candidate = value.slice(match.index,starts[index+1]?.index);
+      const followingUrl = candidate.search(/\s+(?:https?:\/\/|www\.)/i);
+      if (followingUrl >= 0) candidate = candidate.slice(0,followingUrl);
+      candidate = candidate.split(/[\r\n\x00-\x1f<>:"/|?*“”«»]/u)[0].trim();
+      const opening = value[match.index-1];
+      const closing = {"(":")","[":"]","{":"}","'":"'"}[opening];
+      if (closing && candidate.endsWith(closing)) candidate = candidate.slice(0,-1).trimEnd();
+      candidate = candidate.replace(/\.+$/u,"");
+      const link = libraryExplorerLink(candidate);
+      if (link && !links.has(link.path.toLocaleLowerCase("fr-FR"))) {
+        links.set(link.path.toLocaleLowerCase("fr-FR"),link);
+      }
+    }
+    return [...links.values()];
+  }
+
+  function libraryExplorerLinks(message) {
+    const source = message.querySelector("app-chat-message-text, .message-text-internal");
+    if (!source) return [];
+    const links = new Map();
+    source.querySelectorAll("a[href]").forEach(anchor => {
+      if (anchor.closest('[data-dec-created="true"]') || links.size >= 50) return;
+      const link = libraryExplorerLink(anchor.getAttribute("href"),anchor.textContent) ||
+        libraryExplorerLink(anchor.textContent);
+      if (link && !links.has(link.path.toLocaleLowerCase("fr-FR"))) links.set(link.path.toLocaleLowerCase("fr-FR"),link);
+    });
+    for (const link of libraryTextExplorerLinks(libraryLinkSourceText(source))) {
+      if (!links.has(link.path.toLocaleLowerCase("fr-FR"))) links.set(link.path.toLocaleLowerCase("fr-FR"),link);
+      if (links.size >= 50) break;
+    }
+    return [...links.values()];
+  }
+
+  function libraryLinkSourceText(source) {
+    const copy = source.cloneNode(true);
+    copy.querySelectorAll("br").forEach(element => element.replaceWith(document.createTextNode("\n")));
+    copy.querySelectorAll("p,div,li,pre").forEach(element => {
+      element.prepend(document.createTextNode("\n")); element.append(document.createTextNode("\n"));
+    });
+    copy.querySelectorAll('a, [data-dec-created="true"]').forEach(element => element.replaceWith(document.createTextNode(" ")));
+    return copy.textContent || "";
+  }
+
   function libraryTextLinks(text) {
     const links = new Map();
     const value = String(text || "");
@@ -3856,14 +3924,15 @@
     const links = new Map();
     source.querySelectorAll("a[href]").forEach(anchor => {
       if (anchor.closest('[data-dec-created="true"]') || links.size >= 50) return;
+      if (libraryExplorerLink(anchor.getAttribute("href")) || libraryExplorerLink(anchor.textContent)) return;
       const link = libraryLink(anchor.getAttribute("href"),anchor.textContent);
       if (link && !links.has(link.url)) links.set(link.url,link);
     });
     // Le texte des ancres est déjà traité : ne pas ajouter une URL différente
     // simplement parce que le libellé visible diffère de leur destination.
-    const copy = source.cloneNode(true);
-    copy.querySelectorAll('a, [data-dec-created="true"]').forEach(element => element.replaceWith(document.createTextNode(" ")));
-    for (const link of libraryTextLinks(copy.textContent)) {
+    let text = libraryLinkSourceText(source);
+    for (const link of libraryTextExplorerLinks(text)) text = text.replaceAll(link.path," ");
+    for (const link of libraryTextLinks(text)) {
       if (!links.has(link.url)) links.set(link.url,link);
       if (links.size >= 50) break;
     }
@@ -3915,6 +3984,8 @@
           attachments: entry.attachments.map(file => ({ ...file, id: /^document:[a-z0-9]+$/.test(file.id) ? file.id : libraryFilePath(file.id),
             previewPath: libraryFilePath(file.previewPath) })).filter(file => file.id),
           links: Array.isArray(entry.links) ? entry.links.map(link => libraryLink(link?.url,link?.label)).filter(Boolean) : [],
+          explorerLinks: Array.isArray(entry.explorerLinks) ? entry.explorerLinks.map(link =>
+            libraryExplorerLink(link?.path,link?.label)).filter(Boolean) : [],
         })) : [];
     } catch { return []; }
   }
@@ -4092,6 +4163,12 @@
         #${LIBRARY_PANEL_ID} .dec-library-tools { display:flex; gap:6px; flex-wrap:wrap; padding:8px 16px; }
         #${LIBRARY_PANEL_ID} input, #${LIBRARY_PANEL_ID} textarea { width:100%; color:inherit; background:var(--slack-hover,#ffffff0a); border:1px solid var(--slack-line,#56525b); border-radius:7px; padding:8px; font:inherit; }
         #${LIBRARY_PANEL_ID} .dec-library-tools button[aria-pressed='true'] { color:var(--slack-blue,#79b8ff); border-color:currentColor; }
+        #${LIBRARY_PANEL_ID} .dec-library-explorer-options { display:flex; justify-content:flex-end; width:100%; }
+        #${LIBRARY_PANEL_ID} .dec-library-explorer-toggle { display:inline-flex; align-items:center; gap:7px; padding:3px 0; border:0; background:transparent; color:var(--slack-muted,#b8b5bc); font-size:12px; }
+        #${LIBRARY_PANEL_ID} .dec-library-switch-track { position:relative; display:block; width:28px; height:16px; border:1px solid currentColor; border-radius:99px; }
+        #${LIBRARY_PANEL_ID} .dec-library-switch-track::after { content:""; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:currentColor; }
+        #${LIBRARY_PANEL_ID} .dec-library-explorer-toggle[aria-checked='true'] { color:var(--slack-blue,#79b8ff); }
+        #${LIBRARY_PANEL_ID} .dec-library-explorer-toggle[aria-checked='true'] .dec-library-switch-track::after { transform:translateX(12px); }
         #${LIBRARY_PANEL_ID} .dec-library-summary { margin:0; padding:2px 16px 10px; color:var(--slack-muted,#b8b5bc); font-size:12px; }
         #${LIBRARY_PANEL_ID} .dec-library-list { overflow:auto; flex:1; min-height:0; padding:0 12px 12px; overscroll-behavior:contain; }
         #${LIBRARY_PANEL_ID} .dec-library-card { padding:12px; margin:8px 0; border:1px solid var(--slack-line,#56525b); border-radius:9px; overflow-wrap:anywhere; }
@@ -4194,7 +4271,7 @@
     if (!force && libraryNoteEditor) return;
     const chat = libraryChat();
     const waitingForChat = !chat && /^#\/chat\/\d+(?:[/?]|$)/.test(window.location.hash);
-    const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats,libraryNoteEditor?.id]);
+    const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats,libraryShowExplorerLinks,libraryNoteEditor?.id]);
     if (!force && panel.dataset.signature === signature) return;
     panel.dataset.signature = signature;
     const favorites = libraryOpenTab === "favorites";
@@ -4212,23 +4289,43 @@
         const button = libraryButton(label, () => { libraryFilter = kind; renderMessageLibrary(true); });
         button.setAttribute("aria-pressed",String(libraryFilter === kind)); filters.appendChild(button);
       }
+      if (libraryFilter === "all" || libraryFilter === "link") {
+        const options = libraryElement("div","dec-library-explorer-options");
+        const toggle = libraryButton("", () => {
+          libraryShowExplorerLinks = !libraryShowExplorerLinks;
+          writeSetting(STORAGE_GALLERY_EXPLORER_LINKS,String(libraryShowExplorerLinks));
+          renderMessageLibrary(true);
+        }, "dec-library-explorer-toggle");
+        toggle.setAttribute("role","switch");
+        toggle.setAttribute("aria-label","Liens Explorateur");
+        toggle.setAttribute("aria-checked",String(libraryShowExplorerLinks));
+        toggle.title = "Afficher aussi les chemins réseau Windows";
+        const track = libraryElement("span","dec-library-switch-track");
+        track.setAttribute("aria-hidden","true");
+        toggle.append(track,libraryElement("span","","Liens Explorateur"));
+        options.appendChild(toggle); filters.appendChild(options);
+      }
     }
     const query = librarySearch.trim().toLocaleLowerCase("fr-FR");
     const list = panel.querySelector(".dec-library-list");
     const scrollTop = list.scrollTop;
     list.replaceChildren();
     let entries = favorites ? libraryFavorites.filter(entry => libraryAllChats || entry.chatId === chat?.id) :
-      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.chatId === chat?.id && (entry.attachments.length || entry.links?.length));
+      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.chatId === chat?.id &&
+        (entry.attachments.length || entry.links?.length || entry.explorerLinks?.length));
     entries = entries.filter(entry => !query || [entry.text,entry.author,entry.chatTitle,entry.note,
-      ...entry.attachments.map(file => file.name), ...(entry.links || []).flatMap(link => [link.url,link.label,link.host])]
+      ...entry.attachments.map(file => file.name), ...(entry.links || []).flatMap(link => [link.url,link.label,link.host]),
+      ...(entry.explorerLinks || []).flatMap(link => [link.path,link.label,link.host])]
       .join(" ").toLocaleLowerCase("fr-FR").includes(query));
     entries.sort((a,b) => favorites ? b.savedAt-a.savedAt : `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
     let count = 0;
     for (const entry of entries) {
       const files = favorites ? entry.attachments : entry.attachments.filter(file => libraryFilter === "all" || file.kind === libraryFilter);
       const links = favorites || libraryFilter === "all" || libraryFilter === "link" ? entry.links || [] : [];
-      if (!favorites && !files.length && !links.length) continue;
-      count += favorites ? 1 : files.length+links.length;
+      const explorerLinks = favorites || (libraryShowExplorerLinks && (libraryFilter === "all" || libraryFilter === "link")) ?
+        entry.explorerLinks || [] : [];
+      if (!favorites && !files.length && !links.length && !explorerLinks.length) continue;
+      count += favorites ? 1 : files.length+links.length+explorerLinks.length;
       const card = libraryElement("article","dec-library-card");
       card.dataset.entryId = entry.id;
       const meta = libraryElement("div","dec-library-meta");
@@ -4242,7 +4339,9 @@
       meta.appendChild(pin);
       card.appendChild(meta);
       const onlyLinkText = links.length === 1 && (libraryLink(entry.text)?.url === links[0].url || entry.text === links[0].label);
-      if (entry.text && !onlyLinkText) {
+      const onlyExplorerText = explorerLinks.length === 1 &&
+        (libraryExplorerLink(entry.text)?.path === explorerLinks[0].path || entry.text === explorerLinks[0].label);
+      if (entry.text && !onlyLinkText && !onlyExplorerText) {
         const message = libraryButton(entry.text, () => jumpToLibraryMessage(entry), "dec-library-text");
         message.title = "Retrouver ce message dans la conversation";
         card.appendChild(message);
@@ -4276,6 +4375,14 @@
         button.title = "Retrouver le message contenant ce lien";
         const label = link.label && libraryLink(link.label)?.url !== link.url ? link.label : link.host;
         button.append(libraryElement("span","",label),libraryElement("small","",link.url));
+        card.appendChild(button);
+      }
+      for (const link of explorerLinks) {
+        const button = libraryButton("", () => jumpToLibraryMessage(entry), "dec-library-file dec-library-link dec-library-explorer-link");
+        button.setAttribute("aria-label","Retrouver le chemin " + link.path + " dans la conversation");
+        button.title = "Retrouver le message contenant ce chemin réseau";
+        const label = link.label && libraryExplorerLink(link.label)?.path !== link.path ? link.label : "Explorateur · " + link.host;
+        button.append(libraryElement("span","",label),libraryElement("small","",link.path));
         card.appendChild(button);
       }
       if (favorites) card.appendChild(libraryNoteControl(entry));
@@ -4312,15 +4419,17 @@
       if (chat.scope?.matches("app-chat-messages") && message.closest("app-chat-messages") !== chat.scope) continue;
       const attachments = libraryAttachments(message);
       const links = libraryLinks(message);
+      const explorerLinks = libraryExplorerLinks(message);
       const text = libraryMessageText(message);
-      if (!text && !attachments.length && !links.length) continue;
+      if (!text && !attachments.length && !links.length && !explorerLinks.length) continue;
       const day = time?.getAttribute("title") || message.querySelector(".new-day-title")?.textContent || "";
       const date = libraryDay(day);
       const clock = time?.textContent.trim() || "";
       // Ne pas utiliser le profil reconstruit depuis l'en-tête : il peut déjà
       // correspondre à B tandis que ces nœuds Angular contiennent encore A.
       const nativeSender = message.querySelector(".sender-name, .message-name")?.textContent.trim() || "";
-      const nativeFingerprint = JSON.stringify([own,nativeSender,date,clock,text,attachments.map(file=>file.id),links.map(link=>link.url)]);
+      const nativeFingerprint = JSON.stringify([own,nativeSender,date,clock,text,attachments.map(file=>file.id),
+        links.map(link=>link.url),explorerLinks.map(link=>link.path)]);
       const owner = libraryMessageOwners.get(message);
       if (owner && (owner.chatId !== chat.id || owner.account !== account) &&
           owner.fingerprint === nativeFingerprint) {
@@ -4336,9 +4445,9 @@
       const ordinal = duplicates.get(fingerprint) || 0;
       duplicates.set(fingerprint,ordinal+1);
       const id = `${chat.id}:${libraryHash(fingerprint)}:${ordinal}`;
-      const entry = {id,chatId:chat.id,chatTitle:chat.title,author,authorKey,date,time:clock,text,attachments,links};
+      const entry = {id,chatId:chat.id,chatTitle:chat.title,author,authorKey,date,time:clock,text,attachments,links,explorerLinks};
       libraryMessages.set(id,{message,entry});
-      if ((attachments.length || links.length) && JSON.stringify(gallery.get(id)) !== JSON.stringify(entry)) {
+      if ((attachments.length || links.length || explorerLinks.length) && JSON.stringify(gallery.get(id)) !== JSON.stringify(entry)) {
         gallery.set(id,entry); libraryRevision++;
       }
       // Une limite de métadonnées borne les longues sessions sans précharger les fichiers.
