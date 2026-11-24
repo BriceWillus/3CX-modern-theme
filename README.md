@@ -8,6 +8,7 @@ Un thème pour le client web **3CX**, avec une présentation inspirée de Slack 
 - Propose un thème clair ou sombre, une couleur personnalisable et un alignement des messages au choix.
 - Remplace le dernier indicateur de lecture par le portrait de l’interlocuteur dans les discussions individuelles.
 - Préserve la transparence des aperçus PNG, WebP et GIF.
+- Prépare les **avatars GIF animés** : image fixe pour les clients classiques, animation pour les utilisateurs du thème, si le serveur conserve les données du GIF.
 - Ajoute des **favoris avec épingles et notes personnelles**, ainsi qu’une **galerie des images, documents et liens de la conversation ouverte**.
 - Ajoute des emojis et sons de notification personnalisés, avec un panneau de réglages repliable.
 
@@ -34,6 +35,14 @@ Dans la galerie, les filtres **Tout**, **Images**, **Documents** et **Liens** pe
 
 Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet aussi d’afficher les chemins réseau Windows (UNC), y compris les dossiers avec des espaces. Ce choix est mémorisé dans le navigateur. Un clic sur un chemin ramène au message d’origine.
 
+## Photo de profil animée
+
+Avec la bêta 20 ou une version suivante, choisis ton GIF dans **Réglages → Général**, valide le recadrage puis enregistre ton profil. Le GIF doit faire moins de **1 Mo**, au maximum **1024 × 1024 pixels** et **600 images**. Un GIF déjà importé avant cette version doit être sélectionné à nouveau.
+
+Le thème prépare un PNG fixe de la première image et y intègre le GIF original et le recadrage, sans hébergement externe. Les autres utilisateurs ayant le thème à jour retrouvent l'animation depuis cette même photo 3CX, sans configuration supplémentaire. Les clients classiques et mobiles continuent d'afficher le PNG fixe. Le réglage système « Réduire les animations » conserve aussi l'image fixe.
+
+**Compatibilité serveur à vérifier au premier import :** un message confirme l'enregistrement animé après lecture de la photo renvoyée par 3CX. Si le serveur nettoie les données supplémentaires du PNG, un message indique que l'avatar est resté fixe. Dans ce cas, l'animation n'est pas partagée. Le résultat sur le serveur réel doit encore être validé ; le fonctionnement a été testé avec deux navigateurs indépendants et un serveur simulé.
+
 ## Mises à jour
 
 - **Script JavaScript** : laisse les mises à jour automatiques activées dans Tampermonkey. Leur fréquence dépend de ses réglages. Recharge 3CX après une mise à jour du script.
@@ -41,3 +50,4 @@ Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet a
 - Un petit message indique lorsqu’une mise à jour a été appliquée.
 
 Pour mettre à jour manuellement, rouvre le [lien d’installation](https://raw.githubusercontent.com/BriceWillus/3CX-modern-theme/main/3cx-slack-avatars.user.js), confirme la mise à jour dans Tampermonkey, puis recharge 3CX.
+

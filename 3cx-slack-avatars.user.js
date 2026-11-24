@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.19
+// @version      2.0.0-beta.20
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -15,6 +15,7 @@
 // @grant        GM_info
 // @grant        GM_getResourceText
 // @grant        GM.getResourceText
+// @grant        unsafeWindow
 // @connect      *
 // ==/UserScript==
 
@@ -76,6 +77,21 @@
   const SILENT_NOTIFICATION_SOUND_ID = "__silent__";
   const CUSTOM_EMOJI_REFRESH_MS = 5 * 60 * 1000;
   const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
+  const ANIMATED_AVATAR_CHUNK = "deCg"; // PNG : auxiliaire, privé, copiable sans risque.
+  const ANIMATED_AVATAR_MAGIC = "DEC3CXG1";
+  const ANIMATED_AVATAR_MAX_GIF = 1024 * 1024;
+  const ANIMATED_AVATAR_MAX_PNG = ANIMATED_AVATAR_MAX_GIF + 256 * 1024;
+  const animatedAvatarCache = new Map();
+  const animatedAvatarRedispatch = new WeakSet();
+  const avatarCrcTable = Uint32Array.from({ length:256 }, (_, value) => {
+    let crc = value;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    return crc >>> 0;
+  });
+  let animatedAvatarImport = null;
+  let animatedAvatarVerification = null;
+  let animatedAvatarImportSerial = 0;
+  let animatedAvatarRequests = 0;
 
   /*
    * URL HTTPS du manifeste partagé. Exemple :
@@ -2141,6 +2157,474 @@
     document.addEventListener("scroll", positionEmojiAutocomplete, true);
   }
 
+  // Le PNG reste une vraie image fixe. Son bloc privé contient le GIF original
+  // et le recadrage choisi dans 3CX ; aucun service externe ni identifiant ajouté.
+  function avatarBytesToBase64(bytes) {
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 16384) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
+    }
+    return btoa(binary);
+  }
+
+  function avatarBase64ToBytes(value) {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  }
+
+  function avatarCrc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) crc = (crc >>> 8) ^ avatarCrcTable[(crc ^ byte) & 255];
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function avatarGifInfo(bytes) {
+    if (bytes.length < 14 || bytes.length > ANIMATED_AVATAR_MAX_GIF) return null;
+    const text = (start, end) => String.fromCharCode(...bytes.subarray(start, end));
+    if (!/^GIF8[79]a$/.test(text(0, 6))) return null;
+    const width = bytes[6] | (bytes[7] << 8), height = bytes[8] | (bytes[9] << 8);
+    if (!width || !height || width > 1024 || height > 1024) return null;
+    const headerEnd = 13 + (bytes[10] & 128 ? 3 * (1 << ((bytes[10] & 7) + 1)) : 0);
+    let offset = headerEnd, frames = 0, control = null, firstFrame = null;
+    const skipBlocks = () => {
+      while (offset < bytes.length) {
+        const length = bytes[offset++];
+        if (!length) return true;
+        offset += length;
+        if (offset > bytes.length) return false;
+      }
+      return false;
+    };
+    while (offset < bytes.length) {
+      const start = offset, marker = bytes[offset++];
+      if (marker === 0x3b) return frames ? { width, height, frames, firstFrame } : null;
+      if (marker === 0x21) {
+        const label = bytes[offset++];
+        if (!skipBlocks()) return null;
+        if (label === 0xf9) {
+          if (offset - start !== 8 || bytes[start + 2] !== 4) return null;
+          control = bytes.slice(start, offset);
+        }
+      } else if (marker === 0x2c) {
+        if (offset + 9 > bytes.length) return null;
+        const x = bytes[offset] | (bytes[offset + 1] << 8);
+        const y = bytes[offset + 2] | (bytes[offset + 3] << 8);
+        const w = bytes[offset + 4] | (bytes[offset + 5] << 8);
+        const h = bytes[offset + 6] | (bytes[offset + 7] << 8);
+        if (!w || !h || x + w > width || y + h > height) return null;
+        const packed = bytes[offset + 8];
+        offset += 9 + (packed & 128 ? 3 * (1 << ((packed & 7) + 1)) : 0);
+        if (offset >= bytes.length || bytes[offset] < 2 || bytes[offset] > 8) return null;
+        offset++; // Taille initiale des codes LZW.
+        if (!skipBlocks() || ++frames > 600) return null;
+        if (frames === 1) {
+          firstFrame = new Uint8Array(headerEnd + (control?.length || 0) + offset - start + 1);
+          firstFrame.set(bytes.subarray(0, headerEnd));
+          if (control) firstFrame.set(control, headerEnd);
+          firstFrame.set(bytes.subarray(start, offset), headerEnd + (control?.length || 0));
+          firstFrame[firstFrame.length - 1] = 0x3b;
+        }
+        control = null;
+      } else return null;
+    }
+    return null;
+  }
+
+  function avatarPngChunks(bytes) {
+    if (bytes.length < 33 || bytes.length > ANIMATED_AVATAR_MAX_PNG ||
+        ![137,80,78,71,13,10,26,10].every((value, index) => bytes[index] === value)) return null;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), chunks = [];
+    let offset = 8;
+    while (offset + 12 <= bytes.length) {
+      const length = view.getUint32(offset), end = offset + length + 12;
+      if (end > bytes.length) return null;
+      const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+      chunks.push({ offset, end, length, type });
+      if (chunks.length === 1 && (type !== "IHDR" || length !== 13)) return null;
+      if (type === "IEND") return length === 0 && end === bytes.length ? chunks : null;
+      offset = end;
+    }
+    return null;
+  }
+
+  function avatarEmbedGif(png, gif, crop) {
+    const chunks = avatarPngChunks(png), info = avatarGifInfo(gif);
+    if (!chunks || !info || !avatarValidCrop(crop, info)) throw new Error("Avatar invalide");
+    const payload = new Uint8Array(24 + gif.length), view = new DataView(payload.buffer);
+    payload.set(new TextEncoder().encode(ANIMATED_AVATAR_MAGIC));
+    [crop.x, crop.y, crop.width, crop.height].forEach((value, index) => view.setUint32(8 + index * 4, value));
+    payload.set(gif, 24);
+    const chunk = new Uint8Array(payload.length + 12), chunkView = new DataView(chunk.buffer);
+    chunkView.setUint32(0, payload.length);
+    chunk.set(new TextEncoder().encode(ANIMATED_AVATAR_CHUNK), 4);
+    chunk.set(payload, 8);
+    chunkView.setUint32(chunk.length - 4, avatarCrc32(chunk.subarray(4, chunk.length - 4)));
+    // Remplacer un éventuel ancien bloc plutôt que d'empiler les animations.
+    const kept = chunks.filter((item) => item.type !== ANIMATED_AVATAR_CHUNK);
+    const length = 8 + kept.reduce((total, item) => total + item.end - item.offset, 0) + chunk.length;
+    if (length > ANIMATED_AVATAR_MAX_PNG) throw new Error("Avatar trop volumineux");
+    const result = new Uint8Array(length);
+    result.set(png.subarray(0, 8));
+    let offset = 8;
+    for (const item of kept) {
+      if (item.type === "IEND") { result.set(chunk, offset); offset += chunk.length; }
+      result.set(png.subarray(item.offset, item.end), offset);
+      offset += item.end - item.offset;
+    }
+    return result;
+  }
+
+  function avatarValidCrop(crop, info) {
+    return crop && [crop.x, crop.y, crop.width, crop.height].every(Number.isInteger) &&
+      crop.x >= 0 && crop.y >= 0 && crop.width > 0 && crop.height > 0 &&
+      crop.x + crop.width <= info.width && crop.y + crop.height <= info.height;
+  }
+
+  function avatarExtractGif(png) {
+    const chunks = avatarPngChunks(png);
+    if (!chunks) return null;
+    const matches = chunks.filter((item) => item.type === ANIMATED_AVATAR_CHUNK);
+    if (matches.length !== 1) return null;
+    const chunk = matches[0];
+    if (chunk.length < 38 || chunk.length > ANIMATED_AVATAR_MAX_GIF + 24) return null;
+    const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    if (view.getUint32(chunk.end - 4) !== avatarCrc32(png.subarray(chunk.offset + 4, chunk.end - 4))) return null;
+    const payload = png.subarray(chunk.offset + 8, chunk.end - 4);
+    if (String.fromCharCode(...payload.subarray(0, 8)) !== ANIMATED_AVATAR_MAGIC) return null;
+    const crop = { x:view.getUint32(chunk.offset + 16), y:view.getUint32(chunk.offset + 20),
+      width:view.getUint32(chunk.offset + 24), height:view.getUint32(chunk.offset + 28) };
+    const gif = payload.slice(24), info = avatarGifInfo(gif);
+    return info?.frames > 1 && avatarValidCrop(crop, info) ? { gif, crop, width:info.width, height:info.height } : null;
+  }
+
+  function animatedAvatarUrl(value) {
+    try {
+      const url = new URL(value, window.location.href);
+      return url.origin === window.location.origin && /^\/user_images\/[^/]+\.png$/i.test(url.pathname)
+        ? url.href : "";
+    } catch { return ""; }
+  }
+
+  function animatedAvatarNotice(text) {
+    ensureMessageLibrary();
+    libraryNotice(text);
+  }
+
+  async function avatarFirstFramePng(info) {
+    const url = URL.createObjectURL(new Blob([info.firstFrame], { type:"image/gif" }));
+    try {
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve; image.onerror = reject; image.src = url;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = info.width; canvas.height = info.height;
+      canvas.getContext("2d").drawImage(image, 0, 0);
+      return canvas.toDataURL("image/png");
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  function stopAnimatedAvatarImport() {
+    const state = animatedAvatarImport;
+    if (!state) return;
+    state.restore();
+    window.clearTimeout(state.timer);
+    animatedAvatarImport = null;
+  }
+
+  function installAnimatedAvatarCrop(state) {
+    // Tampermonkey isole le script : seules ces deux méthodes de la page sont
+    // temporairement enveloppées, pour le PNG de CET import et sa sortie 128 px.
+    const page = typeof unsafeWindow === "object" ? unsafeWindow : window;
+    const canvasPrototype = page.HTMLCanvasElement.prototype;
+    const contextPrototype = page.CanvasRenderingContext2D.prototype;
+    const originalExport = canvasPrototype.toDataURL, originalDraw = contextPrototype.drawImage;
+    const exportToPage = (callback) => typeof exportFunction === "function" ? exportFunction(callback, page) : callback;
+    const canvases = new WeakMap();
+    const draw = exportToPage(function(image, ...args) {
+      const result = originalDraw.call(this, image, ...args);
+      if (animatedAvatarImport === state && image?.src === state.png && args.length === 8 &&
+          this.canvas.width === 128 && this.canvas.height === 128 &&
+          document.querySelector("img-cropper canvas")) {
+        const [x,y,width,height,dx,dy,dw,dh] = args;
+        const crop = { x, y, width, height };
+        if (dx === 0 && dy === 0 && dw === 128 && dh === 128 && avatarValidCrop(crop, state.info)) {
+          canvases.set(this.canvas, crop);
+        }
+      }
+      return result;
+    });
+    const output = exportToPage(function(...args) {
+      const png = originalExport.apply(this, args), crop = canvases.get(this);
+      if (animatedAvatarImport !== state || !crop || !png.startsWith("data:image/png;base64,")) return png;
+      try {
+        const enriched = avatarEmbedGif(avatarBase64ToBytes(png.split(",")[1]), state.gif, crop);
+        state.exported = true;
+        return `data:image/png;base64,${avatarBytesToBase64(enriched)}`;
+      } catch {
+        if (!state.failed) animatedAvatarNotice("L'animation n'a pas pu être intégrée. 3CX conserve l'image fixe.");
+        state.failed = true;
+        return png;
+      }
+    });
+    state.restore = () => {
+      if (canvasPrototype.toDataURL === output) canvasPrototype.toDataURL = originalExport;
+      if (contextPrototype.drawImage === draw) contextPrototype.drawImage = originalDraw;
+    };
+    try {
+      canvasPrototype.toDataURL = output;
+      contextPrototype.drawImage = draw;
+      if (canvasPrototype.toDataURL !== output || contextPrototype.drawImage !== draw) throw new Error("Sandbox");
+    } catch (error) { state.restore(); throw error; }
+    state.timer = window.setTimeout(stopAnimatedAvatarImport, 5 * 60 * 1000);
+  }
+
+  function redispatchAvatarFile(input) {
+    animatedAvatarRedispatch.add(input);
+    input.dispatchEvent(new Event("change", { bubbles:true }));
+  }
+
+  async function prepareAnimatedAvatarFile(input, file, serial) {
+    try {
+      if (file.size > ANIMATED_AVATAR_MAX_GIF) throw new Error("Le GIF doit faire moins de 1 Mo.");
+      const gif = new Uint8Array(await file.arrayBuffer()), info = avatarGifInfo(gif);
+      if (!info) throw new Error("GIF invalide ou trop grand : maximum 1024 × 1024 pixels et 600 images.");
+      if (info.frames < 2) { if (serial === animatedAvatarImportSerial) redispatchAvatarFile(input); return; }
+      const png = await avatarFirstFramePng(info);
+      if (serial !== animatedAvatarImportSerial || !input.isConnected || !/^#\/settings(?:\/general)?(?:$|[?])/i.test(location.hash)) return;
+      const state = { gif, info, png, seenCropper:false, exported:false, failed:false, restore:() => {},
+        previousPreview:input.closest('app-profile-image')?.querySelector('img')?.src || "" };
+      installAnimatedAvatarCrop(state);
+      animatedAvatarImport = state;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([avatarBase64ToBytes(png.split(",")[1])], file.name.replace(/\.gif$/i, "") + ".png", { type:"image/png" }));
+      input.files = transfer.files;
+      state.previousUrl = document.querySelector('app-header wc-account-menu app-avatar img')?.src || "";
+      animatedAvatarVerification = null;
+      redispatchAvatarFile(input);
+      animatedAvatarNotice("GIF préparé : valide le recadrage puis enregistre ton profil pour partager l'animation.");
+    } catch (error) {
+      if (serial !== animatedAvatarImportSerial) return;
+      stopAnimatedAvatarImport();
+      animatedAvatarNotice(error instanceof Error ? error.message : "Impossible de préparer le GIF.");
+      // Laisser le fichier et le profil existants intacts en cas d'erreur.
+    }
+  }
+
+  function initializeAnimatedAvatars() {
+    const style = document.createElement("style");
+    style.dataset.decCreated = "true";
+    style.textContent = `
+      .dec-animated-avatar-relative { position:relative !important; }
+      .dec-animated-avatar-ready { background-image:none !important; }
+      .dec-animated-avatar-ready > img:not(.dec-animated-avatar-image) { opacity:0 !important; }
+      .dec-animated-avatar-layer { position:absolute !important; inset:0 !important; display:block !important;
+        overflow:hidden !important; border-radius:inherit; pointer-events:none !important; z-index:1; }
+      .dec-animated-avatar-image { position:absolute !important; max-width:none !important; max-height:none !important;
+        min-width:0 !important; min-height:0 !important; margin:0 !important; padding:0 !important;
+        border:0 !important; border-radius:0 !important; object-fit:fill !important; }
+      @media (prefers-reduced-motion:reduce) {
+        .dec-animated-avatar-layer { display:none !important; }
+        .dec-animated-avatar-ready > img:not(.dec-animated-avatar-image) { opacity:1 !important; }
+        .dec-animated-avatar-ready { background-image:var(--dec-static-avatar) !important; }
+      }`;
+    (document.head || document.documentElement).appendChild(style);
+    const confirmCrop = (event) => {
+      if (!animatedAvatarImport) return;
+      const dialog = event.target?.closest?.('app-modal-dialog');
+      if (!dialog?.querySelector('img-cropper')) return;
+      const ok = dialog.querySelector('[data-qa="modal-ok"]');
+      if (ok && !ok.disabled && (event.type === "keydown" ? event.key === "Enter" : ok.contains(event.target))) {
+        animatedAvatarImport.confirmed = true;
+        animatedAvatarImport.seenCropper = true;
+        if (animatedAvatarImport.exported && !animatedAvatarImport.failed) {
+          animatedAvatarVerification = { previousUrl:animatedAvatarImport.previousUrl,
+            gifCrc:avatarCrc32(animatedAvatarImport.gif), until:Date.now()+5*60*1000 };
+        }
+      }
+    };
+    document.addEventListener("click", confirmCrop, true);
+    document.addEventListener("keydown", confirmCrop, true);
+    document.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!input?.matches?.('app-profile-image input[type="file"]') ||
+          !/^#\/settings(?:\/general)?(?:$|[?])/i.test(location.hash)) return;
+      if (animatedAvatarRedispatch.delete(input)) return;
+      const serial = ++animatedAvatarImportSerial;
+      stopAnimatedAvatarImport();
+      animatedAvatarVerification = null;
+      const file = input.files?.[0];
+      if (!file || !(/\.gif$/i.test(file.name) || file.type === "image/gif")) return;
+      event.stopImmediatePropagation(); event.preventDefault();
+      void prepareAnimatedAvatarFile(input, file, serial);
+    }, true);
+    document.addEventListener("load", (event) => {
+      if (event.target?.matches?.('app-avatar img:not(.dec-animated-avatar-image)')) scheduleUpdate();
+    }, true);
+    window.addEventListener("hashchange", () => {
+      animatedAvatarImportSerial++;
+      stopAnimatedAvatarImport();
+    });
+    window.addEventListener("pagehide", () => {
+      stopAnimatedAvatarImport();
+      document.querySelectorAll('.dec-animated-avatar-layer').forEach((layer) => removeAnimatedAvatarLayer(layer.parentElement));
+      for (const entry of animatedAvatarCache.values()) {
+        entry.controller?.abort();
+        if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl);
+      }
+      animatedAvatarCache.clear();
+    });
+  }
+
+  async function readAnimatedAvatarBytes(response) {
+    if (Number(response.headers.get("content-length")) > ANIMATED_AVATAR_MAX_PNG) throw new Error("Avatar trop volumineux");
+    const reader = response.body?.getReader();
+    if (!reader) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length > ANIMATED_AVATAR_MAX_PNG) throw new Error("Avatar trop volumineux");
+      return bytes;
+    }
+    const pieces = [];
+    let length = 0;
+    try {
+      while (true) {
+        const item = await reader.read();
+        if (item.done) break;
+        length += item.value.length;
+        if (length > ANIMATED_AVATAR_MAX_PNG) throw new Error("Avatar trop volumineux");
+        pieces.push(item.value);
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const piece of pieces) { bytes.set(piece, offset); offset += piece.length; }
+    return bytes;
+  }
+
+  function requestAnimatedAvatar(url) {
+    let entry = animatedAvatarCache.get(url);
+    if (entry && (!entry.retryAt || entry.retryAt > Date.now())) return entry;
+    if (animatedAvatarRequests >= 4) return null;
+    // Limiter la mémoire sans invalider les animations actuellement affichées.
+    if (animatedAvatarCache.size >= 512) {
+      const active = new Set([...document.querySelectorAll('app-avatar img:not(.dec-animated-avatar-image), [data-dec-avatar-source]')]
+        .map((node) => animatedAvatarUrl(node.dataset.decAvatarSource || node.src || "")));
+      const unused = [...animatedAvatarCache].find(([key, value]) => !value.pending && !active.has(key));
+      if (!unused) return null;
+      if (unused[1].objectUrl) URL.revokeObjectURL(unused[1].objectUrl);
+      animatedAvatarCache.delete(unused[0]);
+    }
+    entry = { pending:true, objectUrl:"", animation:null, retryAt:0 };
+    animatedAvatarCache.set(url, entry);
+    animatedAvatarRequests++;
+    const controller = new AbortController(), timeout = window.setTimeout(() => controller.abort(), 15000);
+    entry.controller = controller;
+    void fetch(url, { credentials:"same-origin", signal:controller.signal, redirect:"error" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Avatar indisponible");
+        const bytes = await readAnimatedAvatarBytes(response);
+        if (animatedAvatarCache.get(url) !== entry) return;
+        entry.animation = avatarExtractGif(bytes);
+        if (entry.animation) {
+          entry.gifCrc = avatarCrc32(entry.animation.gif);
+          // Les PNG sans animation occupent peu de place. Les GIF, eux, sont
+          // bornés à 16 Mo au total ; évincer d'abord les profils hors de l'écran.
+          const active = new Set([...document.querySelectorAll('.dec-animated-avatar-layer')].map((node) => node.dataset.avatarUrl));
+          let size = [...animatedAvatarCache.values()].reduce((total, item) => total + (item.animation?.gif.length || 0), 0);
+          for (const [key, cached] of animatedAvatarCache) {
+            if (size <= 16 * 1024 * 1024) break;
+            if (key === url || !cached.animation || active.has(key)) continue;
+            size -= cached.animation.gif.length;
+            if (cached.objectUrl) URL.revokeObjectURL(cached.objectUrl);
+            animatedAvatarCache.delete(key);
+          }
+          if (size <= 16 * 1024 * 1024) entry.objectUrl = URL.createObjectURL(new Blob([entry.animation.gif], { type:"image/gif" }));
+          else { entry.animation = null; entry.retryAt = Date.now() + 60000; }
+        }
+        entry.checked = true;
+      })
+      .catch(() => { entry.retryAt = Date.now() + 60000; })
+      .finally(() => {
+        window.clearTimeout(timeout); animatedAvatarRequests--; entry.pending = false;
+        if (animatedAvatarCache.get(url) === entry) scheduleUpdate();
+      });
+    return entry;
+  }
+
+  function removeAnimatedAvatarLayer(host) {
+    host.querySelector(":scope > .dec-animated-avatar-layer")?.remove();
+    host.classList.remove("dec-animated-avatar-ready", "dec-animated-avatar-relative");
+    host.style.removeProperty("--dec-static-avatar");
+  }
+
+  function applyAnimatedAvatarLayer(host, source) {
+    const url = animatedAvatarUrl(source);
+    let layer = host.querySelector(":scope > .dec-animated-avatar-layer");
+    if (layer && layer.dataset.avatarUrl !== url) { removeAnimatedAvatarLayer(host); layer = null; }
+    if (!layer && host.classList.contains("dec-animated-avatar-ready")) removeAnimatedAvatarLayer(host);
+    if (!url) return;
+    const entry = requestAnimatedAvatar(url);
+    if (!entry?.animation || layer) return;
+    layer = document.createElement("span");
+    layer.className = "dec-animated-avatar-layer";
+    layer.dataset.decCreated = "true";
+    layer.dataset.avatarUrl = url;
+    layer.setAttribute("aria-hidden", "true");
+    const image = document.createElement("img"), { crop, width, height } = entry.animation;
+    image.className = "dec-animated-avatar-image"; image.alt = ""; image.draggable = false;
+    for (const [property, value] of Object.entries({ width:width/crop.width*100, height:height/crop.height*100,
+      left:-crop.x/crop.width*100, top:-crop.y/crop.height*100 })) image.style.setProperty(property, `${value}%`, "important");
+    image.onload = () => {
+      if (!layer.isConnected) return;
+      if (getComputedStyle(host).position === "static") host.classList.add("dec-animated-avatar-relative");
+      host.style.setProperty("--dec-static-avatar", `url(${JSON.stringify(url)})`);
+      host.classList.add("dec-animated-avatar-ready");
+    };
+    image.onerror = () => {
+      removeAnimatedAvatarLayer(host);
+      entry.animation = null;
+      if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl);
+      entry.objectUrl = "";
+    };
+    layer.appendChild(image); host.appendChild(layer); image.src = entry.objectUrl;
+  }
+
+  function enhanceAnimatedAvatars() {
+    const state = animatedAvatarImport;
+    if (state) {
+      if (document.querySelector("img-cropper canvas")) state.seenCropper = true;
+      else if (state.seenCropper) {
+        // Le résultat enrichi n'est retenu que si la boîte a été validée.
+        const preview = document.querySelector('app-profile-image img[data-qa="profile-image"], app-profile-image img[data-qa="thumbnail"]');
+        if ((state.confirmed || preview?.src !== state.previousPreview) && preview?.src.startsWith("data:image/png;base64,")) {
+          let animation = null;
+          try { animation = avatarExtractGif(avatarBase64ToBytes(preview.src.split(",")[1])); } catch { /* Aperçu natif incomplet. */ }
+          if (state.exported && !state.failed && animation) {
+            animatedAvatarVerification = { previousUrl:state.previousUrl, gifCrc:avatarCrc32(state.gif), until:Date.now()+5*60*1000 };
+          } else if (!state.failed) animatedAvatarNotice("Le recadrage de cette version de 3CX n'a pas conservé le GIF. L'avatar reste fixe.");
+        }
+        stopAnimatedAvatarImport();
+      }
+    }
+    document.querySelectorAll('.dec-animated-avatar-layer').forEach((layer) => {
+      const host = layer.parentElement;
+      if (!host.hasAttribute('data-dec-avatar-source') && !host.querySelector('img:not(.dec-animated-avatar-image)')) removeAnimatedAvatarLayer(host);
+    });
+    document.querySelectorAll('app-avatar img:not(.dec-animated-avatar-image)').forEach((image) => applyAnimatedAvatarLayer(image.parentElement, image.src));
+    document.querySelectorAll('[data-dec-avatar-source]').forEach((host) => applyAnimatedAvatarLayer(host, host.dataset.decAvatarSource));
+    const verification = animatedAvatarVerification;
+    if (!verification) return;
+    if (Date.now() > verification.until) { animatedAvatarVerification = null; return; }
+    const url = animatedAvatarUrl(document.querySelector('app-header wc-account-menu app-avatar img')?.src || "");
+    if (!url || url === verification.previousUrl) return;
+    const entry = requestAnimatedAvatar(url);
+    if (!entry?.checked) return;
+    animatedAvatarVerification = null;
+    if (entry.gifCrc === verification.gifCrc) {
+      animatedAvatarNotice("Avatar animé enregistré : les utilisateurs du thème verront le GIF, les autres l'image fixe.");
+    } else animatedAvatarNotice("3CX a supprimé les données d'animation à l'enregistrement. L'avatar reste fixe ; le partage du GIF n'a pas fonctionné.");
+  }
+
   function participantProfileFromRow(row) {
     const line = row.querySelector("app-extension-line-view");
     const nameElement = row.querySelector('[data-qa="name"]');
@@ -2832,6 +3316,7 @@
 
   function applyProfileToAvatar(avatar, profile, fallbackName, extension) {
     const imageUrl = profile?.imageUrl || "";
+    avatar.dataset.decAvatarSource = imageUrl;
     const initials = profile?.initials || initialsFromName(profile?.name || fallbackName);
     const profileKey = `${extension}|${imageUrl}|${initials}`;
 
@@ -3706,6 +4191,7 @@
     }
 
     if (portrait.dataset.decReadProfile !== profileKey) {
+      portrait.dataset.decAvatarSource = directProfile.imageUrl || "";
       portrait.dataset.decReadProfile = profileKey;
       portrait.style.setProperty("--dec-read-receipt-avatar", avatarCss);
       portrait.setAttribute("role", "img");
@@ -5338,6 +5824,7 @@
     window.requestAnimationFrame(() => {
       updateScheduled = false;
       enhanceVisibleMessages();
+      enhanceAnimatedAvatars();
     });
   }
 
@@ -5399,6 +5886,7 @@
   initializeCustomEmojis();
   initializeEmojiAutocomplete();
   initializeChatToastNotifications();
+  initializeAnimatedAvatars();
 
   const observer = new MutationObserver((mutations) => {
     if (mutations.some(mutationNeedsUpdate)) {
