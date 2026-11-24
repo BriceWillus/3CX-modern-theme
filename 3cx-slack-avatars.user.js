@@ -1,13 +1,20 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.12
+// @version      2.0.0-beta.13
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
+// @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
+// @updateURL    https://raw.githubusercontent.com/BriceWillus/3CX-modern-theme/main/3cx-slack-avatars.user.js
+// @downloadURL  https://raw.githubusercontent.com/BriceWillus/3CX-modern-theme/main/3cx-slack-avatars.user.js
+// @resource     decSlackThemeCss https://raw.githubusercontent.com/BriceWillus/3CX-modern-theme/main/3cx-slack-stylish.css
 // @match        https://decindustrie.3cx.no:5001/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM.xmlHttpRequest
+// @grant        GM_info
+// @grant        GM_getResourceText
+// @grant        GM.getResourceText
 // @connect      *
 // ==/UserScript==
 
@@ -17,6 +24,12 @@
   const SCRIPT_MARKER = "__dec3cxSlackAvatars";
   const AVATAR_CLASS = "dec-slack-message-avatar";
   const STYLE_ID = "dec-slack-message-avatar-styles";
+  const MANAGED_THEME_STYLE_ID = "dec-slack-managed-theme-styles";
+  const UPDATE_NOTICE_ID = "dec-slack-update-notice";
+  const SCRIPT_VERSION = typeof GM_info === "object" ? String(GM_info?.script?.version || "") : "";
+  const THEME_CSS_URL =
+    "https://raw.githubusercontent.com/BriceWillus/3CX-modern-theme/main/3cx-slack-stylish.css";
+  const THEME_REFRESH_MS = 30 * 60 * 1000;
   const PARTICIPANT_SELECTOR =
     'app-chat-participants li, app-chat-participants [data-qa="chat-participant"]';
   const MESSAGE_SELECTOR = "chat-message";
@@ -43,6 +56,8 @@
   const STORAGE_EMOJI_MANIFEST = "decSlackEmojiManifest";
   const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
   const STORAGE_CONTROLS_COLLAPSED = "decSlackControlsCollapsed";
+  const STORAGE_THEME_CSS = "decSlackThemeCss";
+  const STORAGE_LAST_SCRIPT_VERSION = "decSlackLastScriptVersion";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_NOTIFICATION_SOUND_ID = "decSlackNotificationSoundId";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
@@ -80,6 +95,13 @@
   const enhancedChatToasts = new WeakSet();
   const customEmojis = new Map();
   const customNotificationSounds = new Map();
+  const updateNoticeMessages = new Set();
+  let autoUpdatesInitialized = false;
+  let managedThemeCss = "";
+  let themeRefreshPromise = null;
+  let lastThemeCssCheck = 0;
+  let updateNoticeTimer = 0;
+  let updateNoticeFlushTimer = 0;
   let initialMessageScan = true;
   let chatToastObserver = null;
   let chatToastStackInitialized = false;
@@ -534,6 +556,207 @@
     });
   }
 
+  function closeUpdateNotice() {
+    window.clearTimeout(updateNoticeTimer);
+    window.clearTimeout(updateNoticeFlushTimer);
+    updateNoticeTimer = 0;
+    updateNoticeFlushTimer = 0;
+    updateNoticeMessages.clear();
+    document.getElementById(UPDATE_NOTICE_ID)?.remove();
+  }
+
+  function renderUpdateNotice() {
+    updateNoticeFlushTimer = 0;
+    if (document.hidden || !document.body || updateNoticeMessages.size === 0) {
+      return;
+    }
+    let notice = document.getElementById(UPDATE_NOTICE_ID);
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = UPDATE_NOTICE_ID;
+      notice.dataset.decCreated = "true";
+      notice.setAttribute("role", "status");
+      notice.setAttribute("aria-live", "polite");
+      notice.innerHTML = `
+        <div class="dec-slack-update-copy">
+          <strong>Thème 3CX</strong>
+          <span data-dec-update-message></span>
+        </div>
+        <button type="button" aria-label="Fermer la notification de mise à jour">×</button>
+      `;
+      notice.querySelector("button").addEventListener("click", closeUpdateNotice);
+      document.body.appendChild(notice);
+    }
+    notice.querySelector("[data-dec-update-message]").textContent =
+      [...updateNoticeMessages].join("\n");
+    window.clearTimeout(updateNoticeTimer);
+    updateNoticeTimer = window.setTimeout(closeUpdateNotice, 12000);
+  }
+
+  function queueUpdateNotice(message) {
+    updateNoticeMessages.add(message);
+    window.clearTimeout(updateNoticeTimer);
+    updateNoticeTimer = 0;
+    if (!document.hidden) {
+      window.clearTimeout(updateNoticeFlushTimer);
+      updateNoticeFlushTimer = window.setTimeout(renderUpdateNotice, 300);
+    }
+  }
+
+  function normalizedThemeCss(value) {
+    const css = typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : "";
+    return css && !css.startsWith("<") && css.includes("#dec-slack-controls") &&
+      css.includes("chat-message") ? css : "";
+  }
+
+  function readCachedThemeCss() {
+    try {
+      const cached = JSON.parse(window.localStorage.getItem(STORAGE_THEME_CSS) || "null");
+      const css = normalizedThemeCss(cached?.css);
+      return cached?.url === THEME_CSS_URL && css ? { ...cached, css } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyManagedThemeCss(value, { notify = false, persist = true } = {}) {
+    const css = normalizedThemeCss(value);
+    if (!css) {
+      return false;
+    }
+    const previousCss = managedThemeCss;
+    let style = document.getElementById(MANAGED_THEME_STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = MANAGED_THEME_STYLE_ID;
+      style.dataset.decCreated = "true";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (style.textContent !== css) {
+      style.textContent = css;
+    }
+    managedThemeCss = css;
+    if (persist) {
+      try {
+        window.localStorage.setItem(STORAGE_THEME_CSS, JSON.stringify({
+          url: THEME_CSS_URL,
+          scriptVersion: SCRIPT_VERSION,
+          css,
+        }));
+      } catch {
+        // Le CSS chargé reste utilisable si le cache est plein ou désactivé.
+      }
+    }
+    if (notify && previousCss && previousCss !== css) {
+      queueUpdateNotice("Le style CSS a été mis à jour automatiquement.");
+    }
+    if (previousCss !== css) {
+      scheduleUpdate();
+    }
+    return previousCss !== css;
+  }
+
+  function requestThemeCss() {
+    const url = `${THEME_CSS_URL}?t=${Date.now()}`;
+    if (hasUserscriptHttpRequest()) {
+      return new Promise((resolve, reject) => {
+        userscriptHttpRequest({
+          method: "GET",
+          url,
+          responseType: "text",
+          timeout: 15000,
+          onload(response) {
+            if (response.status < 200 || response.status >= 300) {
+              reject(new Error(`HTTP ${response.status}`));
+              return;
+            }
+            const css = normalizedThemeCss(response.responseText);
+            css ? resolve(css) : reject(new Error("Le CSS distant est vide ou invalide."));
+          },
+          onerror() { reject(new Error("Impossible de télécharger le thème.")); },
+          ontimeout() { reject(new Error("Délai de chargement du thème dépassé.")); },
+        });
+      });
+    }
+    return window.fetch(url, { cache: "no-store", credentials: "omit" }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const css = normalizedThemeCss(await response.text());
+      if (!css) {
+        throw new Error("Le CSS distant est vide ou invalide.");
+      }
+      return css;
+    });
+  }
+
+  function refreshManagedThemeCss({ force = false } = {}) {
+    if (themeRefreshPromise) {
+      return themeRefreshPromise;
+    }
+    if (!force && lastThemeCssCheck && Date.now() - lastThemeCssCheck < THEME_REFRESH_MS) {
+      return Promise.resolve(false);
+    }
+    lastThemeCssCheck = Date.now();
+    themeRefreshPromise = requestThemeCss()
+      .then((css) => applyManagedThemeCss(css, { notify: true }))
+      .catch((error) => {
+        console.warn("[3CX Slack] Le thème en cache est conservé : actualisation impossible.", error);
+        return false;
+      })
+      .finally(() => { themeRefreshPromise = null; });
+    return themeRefreshPromise;
+  }
+
+  async function initializeManagedThemeCss() {
+    const cached = readCachedThemeCss();
+    if (cached) {
+      applyManagedThemeCss(cached.css, { persist: false });
+    }
+    if (!cached || cached.scriptVersion !== SCRIPT_VERSION) {
+      try {
+        const bundled = typeof GM_getResourceText === "function"
+          ? GM_getResourceText("decSlackThemeCss")
+          : typeof GM === "object" && typeof GM.getResourceText === "function"
+            ? await GM.getResourceText("decSlackThemeCss") : "";
+        applyManagedThemeCss(bundled, { notify: Boolean(cached) });
+      } catch (error) {
+        console.warn("[3CX Slack] Impossible de lire le thème fourni avec le script.", error);
+      }
+    }
+    await refreshManagedThemeCss();
+  }
+
+  function initializeAutoUpdates() {
+    if (autoUpdatesInitialized) {
+      return;
+    }
+    autoUpdatesInitialized = true;
+    installAvatarStyles();
+    if (SCRIPT_VERSION) {
+      const previousVersion = readSetting(STORAGE_LAST_SCRIPT_VERSION, "");
+      writeSetting(STORAGE_LAST_SCRIPT_VERSION, SCRIPT_VERSION);
+      const updatesDisabled = typeof GM_info === "object" &&
+        (GM_info?.scriptWillUpdate === false || GM_info?.script?.options?.check_for_updates === false);
+      if (updatesDisabled && previousVersion !== SCRIPT_VERSION) {
+        queueUpdateNotice("Le CSS se met à jour automatiquement. Active les mises à jour du script dans Tampermonkey.");
+      } else if (!previousVersion) {
+        queueUpdateNotice("Mises à jour automatiques du script et du CSS activées.");
+      } else if (previousVersion !== SCRIPT_VERSION) {
+        queueUpdateNotice(`Script mis à jour en version ${SCRIPT_VERSION}.`);
+      }
+    }
+    void initializeManagedThemeCss();
+    window.setInterval(() => void refreshManagedThemeCss(), THEME_REFRESH_MS);
+    window.addEventListener("online", () => void refreshManagedThemeCss({ force: true }));
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        renderUpdateNotice();
+        void refreshManagedThemeCss();
+      }
+    });
+  }
+
   const avatarPalette = [
     "#4a154b",
     "#1264a3",
@@ -564,6 +787,48 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+      #${UPDATE_NOTICE_ID} {
+        position: fixed !important;
+        z-index: 2147483100 !important;
+        right: 16px !important;
+        bottom: 16px !important;
+        display: flex !important;
+        align-items: start !important;
+        gap: 14px !important;
+        box-sizing: border-box !important;
+        width: min(360px, calc(100vw - 32px)) !important;
+        padding: 14px !important;
+        color: var(--slack-ink, #f8f8fa) !important;
+        background: var(--slack-panel, #242429) !important;
+        border: 1px solid var(--dec-accent-border, #65536a) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25) !important;
+        font: 13px/1.45 "Segoe UI", Arial, sans-serif !important;
+      }
+      #${UPDATE_NOTICE_ID} .dec-slack-update-copy {
+        display: grid !important;
+        flex: 1 !important;
+        gap: 4px !important;
+        white-space: pre-line !important;
+      }
+      #${UPDATE_NOTICE_ID} button {
+        display: grid !important;
+        place-items: center !important;
+        flex: 0 0 24px !important;
+        width: 24px !important;
+        height: 24px !important;
+        padding: 0 !important;
+        color: inherit !important;
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 5px !important;
+        font: 20px/1 "Segoe UI", Arial, sans-serif !important;
+        cursor: pointer !important;
+      }
+      #${UPDATE_NOTICE_ID} button:focus-visible {
+        outline: 2px solid var(--dec-accent, #ad80b5) !important;
+      }
+
       app-edition-banner.${FREE_EDITION_BANNER_CLASS} {
         display: none !important;
       }
@@ -4260,6 +4525,7 @@
 
   applyPreferences();
   ensureControls();
+  initializeAutoUpdates();
   initializeCustomEmojis();
   initializeEmojiAutocomplete();
   initializeChatToastNotifications();
