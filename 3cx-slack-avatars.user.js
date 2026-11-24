@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.15
+// @version      2.0.0-beta.16
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -138,6 +138,9 @@
   let currentOwnProfile = null;
   const libraryMessages = new Map();
   const libraryConversations = new Map();
+  const libraryMessageOwners = new WeakMap();
+  const librarySelectedChatOwners = new WeakMap();
+  let libraryVisibleRoute = "";
   let libraryAccount = "";
   let libraryFavorites = [];
   let libraryOpenTab = "";
@@ -3760,11 +3763,27 @@
 
   function libraryChat() {
     const id = window.location.hash.match(/^#\/chat\/(\d+)(?:[/?]|$)/)?.[1];
+    if ((id || "") !== libraryVisibleRoute) {
+      libraryVisibleRoute = id || "";
+      libraryMessages.clear();
+      libraryNoteEditor = null;
+      libraryRevision++;
+    }
     if (!id) return null;
-    const title = document.querySelector(
-      'chat-messages-header [data-qa="chat-name"], chat-messages-header #showParticipants',
-    )?.textContent.trim();
-    return title ? { id, title } : null;
+    const normalize = value => String(value || "").replace(/\s+/g," ").trim();
+    const selected = document.querySelector("chat-item.selected");
+    const selectedTitle = normalize(selected?.querySelector('[data-qa="header-name"], .header-name')?.textContent);
+    const selectedOwner = selected && librarySelectedChatOwners.get(selected);
+    // L'URL peut déjà désigner B alors que la sélection et l'en-tête désignent A.
+    if (selectedOwner && selectedOwner.title === selectedTitle &&
+        (selectedOwner.chatId !== id || selectedOwner.account !== libraryAccount)) return null;
+    const header = [...document.querySelectorAll("chat-messages-header")].find(element => {
+      const title = normalize(element.querySelector('[data-qa="chat-name"], #showParticipants')?.textContent);
+      return title && (!selectedTitle || selectedTitle === title) && element.getClientRects().length;
+    });
+    if (!header) return null;
+    const title = normalize(header.querySelector('[data-qa="chat-name"], #showParticipants')?.textContent);
+    return {id,title,selected,selectedTitle,scope:header.closest("app-chat-messages, chat-component")};
   }
 
   function libraryFilePath(value) {
@@ -4115,6 +4134,7 @@
     if (libraryNoteEditor && !libraryFavorites.some(entry => entry.id === libraryNoteEditor.id)) libraryNoteEditor = null;
     if (!force && libraryNoteEditor) return;
     const chat = libraryChat();
+    const waitingForChat = !chat && /^#\/chat\/\d+(?:[/?]|$)/.test(window.location.hash);
     const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats,libraryNoteEditor?.id]);
     if (!force && panel.dataset.signature === signature) return;
     panel.dataset.signature = signature;
@@ -4139,7 +4159,7 @@
     const scrollTop = list.scrollTop;
     list.replaceChildren();
     let entries = favorites ? libraryFavorites.filter(entry => libraryAllChats || entry.chatId === chat?.id) :
-      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.attachments.length);
+      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.chatId === chat?.id && entry.attachments.length);
     entries = entries.filter(entry => !query || [entry.text,entry.author,entry.chatTitle,entry.note,
       ...entry.attachments.map(file => file.name)].join(" ").toLocaleLowerCase("fr-FR").includes(query));
     entries.sort((a,b) => favorites ? b.savedAt-a.savedAt : `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
@@ -4191,9 +4211,9 @@
       if (favorites) card.appendChild(libraryNoteControl(entry));
       list.appendChild(card);
     }
-    if (!count) list.appendChild(libraryElement("p","dec-library-empty",query ? "Aucun résultat." :
+    if (!count) list.appendChild(libraryElement("p","dec-library-empty",!favorites && waitingForChat ? "Chargement des pièces jointes…" : query ? "Aucun résultat." :
       favorites ? "Épingle un message à l’aide du bouton qui apparaît à son survol." : "Aucune pièce jointe chargée pour ce filtre."));
-    panel.querySelector(".dec-library-summary").textContent = favorites ?
+    panel.querySelector(".dec-library-summary").textContent = !favorites && waitingForChat ? "Chargement de la conversation…" : favorites ?
       `${count} favori${count>1?"s":""} · Enregistrés dans ce navigateur pour ton compte.` :
       `${count} pièce${count>1?"s":""} jointe${count>1?"s":""} · ${chat?.title || "Ouvre une conversation"}. Remonte le fil pour compléter la galerie.`;
     list.scrollTop = scrollTop;
@@ -4217,14 +4237,29 @@
     const duplicates = new Map();
     for (const record of records) {
       const {message,own,profile,time} = record;
+      if (chat.scope && !chat.scope.contains(message)) continue;
+      if (chat.scope?.matches("app-chat-messages") && message.closest("app-chat-messages") !== chat.scope) continue;
       const attachments = libraryAttachments(message);
       const text = libraryMessageText(message);
       if (!text && !attachments.length) continue;
       const day = time?.getAttribute("title") || message.querySelector(".new-day-title")?.textContent || "";
       const date = libraryDay(day);
+      const clock = time?.textContent.trim() || "";
+      // Ne pas utiliser le profil reconstruit depuis l'en-tête : il peut déjà
+      // correspondre à B tandis que ces nœuds Angular contiennent encore A.
+      const nativeSender = message.querySelector(".sender-name, .message-name")?.textContent.trim() || "";
+      const nativeFingerprint = JSON.stringify([own,nativeSender,date,clock,text,attachments.map(file=>file.id)]);
+      const owner = libraryMessageOwners.get(message);
+      if (owner && (owner.chatId !== chat.id || owner.account !== account) &&
+          owner.fingerprint === nativeFingerprint) {
+        message.querySelector(":scope > .dec-library-pin")?.remove();
+        continue;
+      }
+      // Un composant recyclé n'est réattribué que lorsque son contenu natif
+      // change. Les messages déjà indexés restent rattachés à leur discussion.
+      libraryMessageOwners.set(message,{chatId:chat.id,account,fingerprint:nativeFingerprint});
       const author = own ? "Moi" : profile?.name || message.querySelector(".sender-name,.message-name")?.textContent.trim() || "Participant";
       const authorKey = own ? account : profile?.extension || author;
-      const clock = time?.textContent.trim() || "";
       const fingerprint = JSON.stringify([authorKey,date,clock,text,attachments.map(file=>file.id)]);
       const ordinal = duplicates.get(fingerprint) || 0;
       duplicates.set(fingerprint,ordinal+1);
@@ -4247,6 +4282,9 @@
         message.appendChild(pin);
       }
       pin.dataset.messageId = id;
+    }
+    if (chat.selected && chat.selectedTitle) {
+      librarySelectedChatOwners.set(chat.selected,{chatId:chat.id,account,title:chat.selectedTitle});
     }
     updateLibraryPins();
     if (libraryPendingJump?.chatId === chat.id && records.length) {
@@ -5194,6 +5232,11 @@
     // ils ne doivent pas être pris pour de nouveaux messages entrants.
     suppressAnimationsUntil = performance.now() + 1200;
     disposeModernScroll();
+    // Effacer immédiatement les cartes de l'ancienne vue ; leur cache reste
+    // disponible uniquement sous l'identifiant de leur propre conversation.
+    libraryMessages.clear();
+    libraryNoteEditor = null;
+    renderMessageLibrary(true);
     scheduleUpdate();
   });
   document.addEventListener("visibilitychange", () => {
