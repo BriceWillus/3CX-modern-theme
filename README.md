@@ -32,6 +32,8 @@ Les favoris et notes sont enregistrés **dans ce navigateur, pour le compte conn
 
 Dans la galerie, les filtres **Tout**, **Images**, **Documents** et **Liens** permettent de retrouver le contenu partagé, avec une recherche par nom, URL ou auteur.
 
+Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet aussi d’afficher les chemins réseau Windows (UNC), y compris les dossiers avec des espaces. Ce choix est mémorisé dans le navigateur. Un clic sur un chemin ramène au message d’origine.
+
 ## Mises à jour
 
 - **Script JavaScript** : laisse les mises à jour automatiques activées dans Tampermonkey. Leur fréquence dépend de ses réglages. Recharge 3CX après une mise à jour du script.
