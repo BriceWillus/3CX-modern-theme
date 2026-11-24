@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.14
+// @version      2.0.0-beta.15
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -54,6 +54,8 @@
   const LIBRARY_STYLE_ID = "dec-slack-message-library-styles";
   const STORAGE_FAVORITES = "decSlackFavoritesV1";
   const PIN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3 21 8l-4 1-3 5-1 4-7-7 4-1 5-3z"/><path d="m2 22 6-6"/></svg>';
+  const UNPIN_ICON = PIN_ICON.replace("</svg>", '<path d="m3 3 18 18"/></svg>');
+  const NOTE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6z"/><path d="m14 5 5 5"/></svg>';
   const GALLERY_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L6 21"/></svg>';
   const STORAGE_LAYOUT = "decSlackLayout";
   const STORAGE_THEME = "decSlackTheme";
@@ -146,6 +148,7 @@
   let libraryReturnFocus = null;
   let libraryInitialized = false;
   let libraryPendingJump = null;
+  let libraryNoteEditor = null;
   const nativeOriginalImages = new Map();
   let originalDownloadToken = null;
   let originalDownloadTokenPromise = null;
@@ -3911,29 +3914,11 @@
     window.setTimeout(() => message.classList.remove("dec-library-highlight"),2000);
   }
 
-  function openLibraryAttachment(entry, attachment) {
-    const message = libraryMessages.get(entry.id)?.message;
-    if (!message?.isConnected || libraryChat()?.id !== entry.chatId) {
-      jumpToLibraryMessage(entry);
-      libraryNotice("Reviens au message dans sa conversation pour ouvrir la pièce jointe.");
-      return;
-    }
-    const image = [...message.querySelectorAll('img[src*="/MyPhone/downloadChatFile/"]')]
-      .find(el => libraryFilePath(el.getAttribute("src")).replace(/\.preview$/i,"") === attachment.id);
-    const documentPreview = [...message.querySelectorAll("app-chat-message-file")].find(el =>
-      el.querySelector('[data-qa="message-filename"]')?.textContent.trim() === attachment.name);
-    const preview = image?.closest("app-chat-message-file-preview, file-preview, preview-text-message") || documentPreview ||
-      [...message.querySelectorAll("app-chat-message-file-preview, file-preview")].find(el =>
-        [...el.querySelectorAll("a[href]")].some(a => libraryFilePath(a.href) === attachment.id));
-    const target = image || preview?.querySelector("a[download], [data-qa='download'], a, button, [title]");
-    if (target) target.click();
-    else libraryNotice("Utilise le bouton de téléchargement sur le message d’origine.");
-  }
-
   function closeMessageLibrary(restoreFocus = true) {
     const panel = document.getElementById(LIBRARY_PANEL_ID);
     if (panel) panel.hidden = true;
     libraryOpenTab = "";
+    libraryNoteEditor = null;
     document.querySelectorAll("[data-dec-library-tab]").forEach(button => button.setAttribute("aria-expanded","false"));
     if (restoreFocus && libraryReturnFocus?.isConnected) libraryReturnFocus.focus();
   }
@@ -3945,6 +3930,7 @@
     }
     libraryReturnFocus = button || document.activeElement;
     libraryOpenTab = tab;
+    libraryNoteEditor = null;
     librarySearch = "";
     const panel = document.getElementById(LIBRARY_PANEL_ID);
     panel.hidden = false;
@@ -3953,6 +3939,61 @@
       el.setAttribute("aria-expanded",String(el.dataset.decLibraryTab === tab)));
     renderMessageLibrary(true);
     panel.querySelector("input").focus();
+  }
+
+  function finishLibraryNote(save) {
+    const editor = libraryNoteEditor;
+    if (!editor) return;
+    if (save) {
+      const next = libraryFavorites.map(entry => entry.id === editor.id ?
+        {...entry,note:editor.value.trim()} : entry);
+      if (!saveLibraryFavorites(next)) return;
+    }
+    libraryNoteEditor = null;
+    renderMessageLibrary(true);
+    const card = [...document.querySelectorAll(`#${LIBRARY_PANEL_ID} .dec-library-card`)]
+      .find(element => element.dataset.entryId === editor.id);
+    card?.querySelector(".dec-library-note-toggle")?.focus();
+  }
+
+  function libraryNoteControl(entry) {
+    const host = libraryElement("div","dec-library-note");
+    if (libraryNoteEditor?.id === entry.id) {
+      const editor = libraryNoteEditor;
+      const input = libraryElement("textarea");
+      input.placeholder = "Note personnelle…";
+      input.maxLength = 4000;
+      input.setAttribute("aria-label",`Note personnelle — ${entry.author}, ${entry.date} ${entry.time}`);
+      input.value = editor.value;
+      input.addEventListener("input", () => { editor.value = input.value; });
+      input.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+          event.preventDefault(); event.stopPropagation(); finishLibraryNote(false);
+        } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault(); event.stopPropagation(); finishLibraryNote(true);
+        }
+      });
+      const actions = libraryElement("div","dec-library-note-actions");
+      actions.append(libraryButton("Enregistrer", () => finishLibraryNote(true)),
+        libraryButton("Annuler", () => finishLibraryNote(false)));
+      host.append(input,actions);
+    } else {
+      const hasNote = Boolean(entry.note?.trim());
+      const button = libraryButton("", () => {
+        libraryNoteEditor = {id:entry.id,value:entry.note || ""};
+        renderMessageLibrary(true);
+        document.querySelector(`#${LIBRARY_PANEL_ID} textarea`)?.focus();
+      }, `dec-library-note-toggle ${hasNote ? "dec-library-note-text" : "dec-library-add-note"}`);
+      button.title = hasNote ? "Modifier la note personnelle" : "Ajouter une note personnelle";
+      button.setAttribute("aria-label",button.title);
+      if (hasNote) button.textContent = entry.note;
+      else {
+        button.innerHTML = NOTE_ICON;
+        button.appendChild(libraryElement("span","","note"));
+      }
+      host.appendChild(button);
+    }
+    return host;
   }
 
   function ensureMessageLibrary() {
@@ -3978,17 +4019,24 @@
         #${LIBRARY_PANEL_ID} .dec-library-summary { margin:0; padding:2px 16px 10px; color:var(--slack-muted,#b8b5bc); font-size:12px; }
         #${LIBRARY_PANEL_ID} .dec-library-list { overflow:auto; flex:1; min-height:0; padding:0 12px 12px; overscroll-behavior:contain; }
         #${LIBRARY_PANEL_ID} .dec-library-card { padding:12px; margin:8px 0; border:1px solid var(--slack-line,#56525b); border-radius:9px; overflow-wrap:anywhere; }
-        #${LIBRARY_PANEL_ID} .dec-library-meta { font-size:12px; color:var(--slack-muted,#b8b5bc); margin-bottom:7px; }
-        #${LIBRARY_PANEL_ID} .dec-library-text { margin:6px 0 10px; white-space:pre-wrap; max-height:180px; overflow:auto; }
+        #${LIBRARY_PANEL_ID} .dec-library-meta { display:flex; align-items:flex-start; gap:8px; font-size:12px; color:var(--slack-muted,#b8b5bc); margin-bottom:7px; }
+        #${LIBRARY_PANEL_ID} .dec-library-meta-label { flex:1; min-width:0; padding-top:4px; }
+        #${LIBRARY_PANEL_ID} .dec-library-card-pin { display:grid; place-items:center; flex:0 0 26px; width:26px; height:26px; padding:4px; border:0; background:transparent; }
+        #${LIBRARY_PANEL_ID} .dec-library-card-pin[aria-pressed='true'] { color:var(--slack-blue,#79b8ff); }
+        #${LIBRARY_PANEL_ID} .dec-library-text { display:block; width:100%; text-align:left; color:inherit; border:0; padding:0; margin:6px 0 10px; white-space:pre-wrap; max-height:180px; overflow:auto; }
         #${LIBRARY_PANEL_ID} .dec-library-card img { display:block; max-width:100%; max-height:180px; object-fit:contain; margin:auto; background:transparent!important; border-radius:5px; }
         #${LIBRARY_PANEL_ID} .dec-library-file { display:block; width:100%; text-align:left; margin:6px 0; }
         #${LIBRARY_PANEL_ID} .dec-library-file span { display:block; margin-top:5px; }
         #${LIBRARY_PANEL_ID} .dec-library-card textarea { min-height:52px; max-height:180px; resize:vertical; margin:6px 0; font-size:13px; }
-        #${LIBRARY_PANEL_ID} .dec-library-card footer { display:flex; gap:8px; justify-content:space-between; margin-top:8px; }
-        #${LIBRARY_PANEL_ID} .dec-library-card footer button { font-size:12px; }
+        #${LIBRARY_PANEL_ID} .dec-library-note { margin-top:6px; }
+        #${LIBRARY_PANEL_ID} .dec-library-note-toggle { border:0; background:transparent; padding:3px 0; font-size:12px; }
+        #${LIBRARY_PANEL_ID} .dec-library-add-note { display:inline-flex; align-items:center; gap:5px; color:var(--slack-muted,#b8b5bc); }
+        #${LIBRARY_PANEL_ID} .dec-library-note-text { display:block; max-width:calc(100% - 12px); margin-left:12px; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--slack-blue,#79b8ff); opacity:.85; }
+        #${LIBRARY_PANEL_ID} .dec-library-note-actions { display:flex; gap:7px; margin-top:4px; }
+        #${LIBRARY_PANEL_ID} .dec-library-note-actions button { font-size:12px; padding:3px 7px; }
         #${LIBRARY_PANEL_ID} .dec-library-empty { padding:24px 10px; color:var(--slack-muted,#b8b5bc); }
         chat-message:has(> .dec-library-pin) { position:relative!important; }
-        chat-message > .dec-library-pin { position:absolute!important; top:3px; right:8px; z-index:8;
+        chat-message > .dec-library-pin { position:absolute!important; top:3px; right:44px; z-index:8;
           display:grid!important; place-items:center; width:28px; height:28px; padding:4px; color:var(--slack-muted,#aaa);
           background:var(--slack-panel,#242429); border:1px solid var(--slack-line,#56525b); border-radius:7px; cursor:pointer; opacity:0; }
         chat-message:hover > .dec-library-pin, chat-message:focus-within > .dec-library-pin,
@@ -4047,7 +4095,9 @@
       libraryInitialized = true;
       document.addEventListener("keydown",event => {
         if (event.key === "Escape" && libraryOpenTab && !document.querySelector("modal-container.show")) {
-          event.preventDefault(); closeMessageLibrary();
+          event.preventDefault();
+          if (libraryNoteEditor) finishLibraryNote(false);
+          else closeMessageLibrary();
         }
       });
       window.addEventListener("storage",event => {
@@ -4062,9 +4112,10 @@
   function renderMessageLibrary(force = false) {
     const panel = document.getElementById(LIBRARY_PANEL_ID);
     if (!panel || panel.hidden || !libraryOpenTab) return;
-    if (!force && panel.contains(document.activeElement) && document.activeElement.matches("textarea")) return;
+    if (libraryNoteEditor && !libraryFavorites.some(entry => entry.id === libraryNoteEditor.id)) libraryNoteEditor = null;
+    if (!force && libraryNoteEditor) return;
     const chat = libraryChat();
-    const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats]);
+    const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats,libraryNoteEditor?.id]);
     if (!force && panel.dataset.signature === signature) return;
     panel.dataset.signature = signature;
     const favorites = libraryOpenTab === "favorites";
@@ -4098,12 +4149,25 @@
       if (!favorites && !files.length) continue;
       count += favorites ? 1 : files.length;
       const card = libraryElement("article","dec-library-card");
-      const meta = libraryElement("div","dec-library-meta",`${entry.author} · ${entry.date} ${entry.time}${favorites && libraryAllChats ? ` · ${entry.chatTitle}` : ""}`);
+      card.dataset.entryId = entry.id;
+      const meta = libraryElement("div","dec-library-meta");
+      meta.appendChild(libraryElement("span","dec-library-meta-label",`${entry.author} · ${entry.date} ${entry.time}${favorites && libraryAllChats ? ` · ${entry.chatTitle}` : ""}`));
+      const pinned = libraryFavorites.some(item => item.id === entry.id);
+      const pin = libraryButton("", () => toggleLibraryFavorite(entry), "dec-library-card-pin");
+      pin.innerHTML = pinned ? UNPIN_ICON : PIN_ICON;
+      pin.title = pinned ? "Retirer l’épingle" : "Épingler";
+      pin.setAttribute("aria-label",pin.title);
+      pin.setAttribute("aria-pressed",String(pinned));
+      meta.appendChild(pin);
       card.appendChild(meta);
-      if (entry.text) card.appendChild(libraryElement("p","dec-library-text",entry.text));
+      if (entry.text) {
+        const message = libraryButton(entry.text, () => jumpToLibraryMessage(entry), "dec-library-text");
+        message.title = "Retrouver ce message dans la conversation";
+        card.appendChild(message);
+      }
       for (const file of files) {
-        const button = libraryButton("", () => openLibraryAttachment(entry,file), "dec-library-file");
-        button.setAttribute("aria-label",`Ouvrir ${file.name}`);
+        const button = libraryButton("", () => jumpToLibraryMessage(entry), "dec-library-file");
+        button.setAttribute("aria-label",`Retrouver ${file.name} dans la conversation`);
         if (file.kind === "image" && file.previewPath) {
           const image = libraryElement("img");
           image.alt = ""; image.loading = "lazy"; image.decoding = "async";
@@ -4124,23 +4188,8 @@
         }
         button.appendChild(libraryElement("span","",file.name)); card.appendChild(button);
       }
-      if (favorites) {
-        const note = libraryElement("textarea");
-        note.placeholder = "Ajouter une note personnelle…"; note.maxLength = 4000;
-        note.setAttribute("aria-label",`Note personnelle — ${entry.author}, ${entry.date} ${entry.time}`);
-        note.value = entry.note || "";
-        note.addEventListener("input", () => {
-          const next = libraryFavorites.map(item => item.id === entry.id ? {...item,note:note.value} : item);
-          if (saveLibraryFavorites(next)) panel.dataset.signature = "";
-        });
-        card.appendChild(note);
-      }
-      const actions = libraryElement("footer");
-      actions.appendChild(libraryButton("Voir le message", () => jumpToLibraryMessage(entry)));
-      const pinned = libraryFavorites.some(item => item.id === entry.id);
-      const pin = libraryButton(pinned ? "Retirer l’épingle" : "Épingler", () => toggleLibraryFavorite(entry));
-      pin.setAttribute("aria-pressed",String(pinned));
-      actions.appendChild(pin); card.appendChild(actions); list.appendChild(card);
+      if (favorites) card.appendChild(libraryNoteControl(entry));
+      list.appendChild(card);
     }
     if (!count) list.appendChild(libraryElement("p","dec-library-empty",query ? "Aucun résultat." :
       favorites ? "Épingle un message à l’aide du bouton qui apparaît à son survol." : "Aucune pièce jointe chargée pour ce filtre."));
