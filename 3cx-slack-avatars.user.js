@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.10
+// @version      2.0.0-beta.11
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -3929,8 +3929,9 @@
       receipt: record.message.querySelector("delivered-check:not([data-dec-created])"),
     }));
     const read = receiptHasReadMarker;
-    // Le portrait suit uniquement le dernier envoi confirmé lu par 3CX.
-    const latest = receipts.filter((r) => r.own && read(r.receipt)).at(-1);
+    // L'interlocuteur a aussi lu ses propres messages. Le portrait suit le
+    // dernier message reçu ou le dernier de mes envois confirmé lu par 3CX.
+    const latest = receipts.filter((r) => !r.own || read(r.receipt)).at(-1);
     receipts.forEach(({ message, own, receipt }) => {
       message.classList.remove(LATEST_READ_CLASS);
       message
