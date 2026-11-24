@@ -37,7 +37,9 @@ Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet a
 
 ## Photo de profil animée
 
-Avec la bêta 20 ou une version suivante, choisis ton GIF dans **Réglages → Général**, valide le recadrage puis enregistre ton profil. Le GIF doit faire moins de **1 Mo**, au maximum **1024 × 1024 pixels** et **600 images**. Un GIF déjà importé avant cette version doit être sélectionné à nouveau.
+Avec la bêta 21 ou une version suivante, choisis ton GIF dans **Réglages → Général**, valide le recadrage puis enregistre ton profil. Un GIF déjà importé avant la bêta 20 doit être sélectionné à nouveau.
+
+**Limite réelle de ce serveur : 100 Kio (102 400 octets) pour l'import de l'avatar.** C'est le PNG fixe et le GIF intégré qui doivent tenir dans cette limite, et non le GIF seul. Le thème limite le PNG final à **96 Kio**, avec une marge de 4 Kio, et contrôle sa taille après recadrage. Un import trop volumineux est bloqué avant l'envoi. La limite de 1 Mo indiquée en bêta 20 était trop élevée. Pour commencer, vise un GIF de **60 à 70 Kio** ; le poids exact disponible dépend de la première image PNG. Les limites de **1024 × 1024 pixels** et **600 images** restent applicables.
 
 Le thème prépare un PNG fixe de la première image et y intègre le GIF original et le recadrage, sans hébergement externe. Les autres utilisateurs ayant le thème à jour retrouvent l'animation depuis cette même photo 3CX, sans configuration supplémentaire. Les clients classiques et mobiles continuent d'afficher le PNG fixe. Le réglage système « Réduire les animations » conserve aussi l'image fixe.
 

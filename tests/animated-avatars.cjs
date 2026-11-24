@@ -15,6 +15,7 @@ const testSource = source.slice(0, start) + `
     base64:avatarBytesToBase64, bytes:avatarBase64ToBytes,
     first:avatarFirstFramePng, stop:stopAnimatedAvatarImport,
     state:()=>({pending:!!animatedAvatarImport,exported:animatedAvatarImport?.exported,
+      failed:!!animatedAvatarImport?.failed,
       verification:!!animatedAvatarVerification,cache:[...animatedAvatarCache.keys()]}),
   };
   scheduleUpdate = () => {};
@@ -32,6 +33,15 @@ const html = `<!doctype html><html><head><style>
 </body></html>`;
 let passed = 0;
 const check = (condition, text) => { assert(condition, text); passed++; };
+// Ajouter un commentaire GIF valide pour tester le poids réel, sans modifier
+// les images ni dépendre de la compression d'une image générée au hasard.
+function padGif(original, targetLength) {
+  const chunks=[original.subarray(0,-1),Buffer.from([0x21,0xfe])];
+  let remaining=targetLength-(original.length-1)-4;
+  while(remaining>0){const length=Math.min(255,remaining-1);assert(length>0);chunks.push(Buffer.from([length]),Buffer.alloc(length,65));remaining-=length+1;}
+  chunks.push(Buffer.from([0,0x3b]));
+  const result=Buffer.concat(chunks);assert.equal(result.length,targetLength);return result;
+}
 (async () => {
   const browser = await chromium.launch({headless:true, channel:'chrome'});
   const serverImages = new Map();
@@ -190,6 +200,34 @@ const check = (condition, text) => { assert(condition, text); passed++; };
     await page.evaluate(()=>{location.hash='#/chat/21';});
     await page.waitForFunction(()=>!avatarTest.state().pending);
     check(await page.evaluate(()=>HTMLCanvasElement.prototype.toDataURL===window.originalCanvasExport && CanvasRenderingContext2D.prototype.drawImage===window.originalCanvasDraw), 'Leaving settings restores native canvas methods');
+    await page.evaluate(()=>{document.querySelector('app-modal-dialog')?.remove();location.hash='#/settings';});
+    await page.waitForFunction(()=>location.hash==='#/settings');
+    await page.evaluate(()=>{window.nativeExport=null;});
+    const changesBefore=await page.evaluate(()=>window.nativeChanges);
+    const savedPreview=await page.locator('app-profile-image img').getAttribute('src');
+    await page.locator('app-profile-image input').setInputFiles({name:'too-large.gif',mimeType:'image/gif',buffer:padGif(Buffer.from(gif,'base64'),100*1024)});
+    await page.waitForFunction(()=>document.querySelector('#dec-slack-library-notice')?.textContent.includes('100 Kio'));
+    check(await page.evaluate(()=>window.nativeChanges)===changesBefore, 'Oversized GIF rejected before invoking the native importer');
+    check(await page.locator('app-profile-image img').getAttribute('src')===savedPreview, 'Oversized input leaves the selected profile unchanged');
+    check(await page.evaluate(()=>!avatarTest.state().pending && HTMLCanvasElement.prototype.toDataURL===window.originalCanvasExport), 'Rejected GIF installs no canvas hooks');
+    // Le GIF tient seul, mais le PNG fixe et le bloc privé font dépasser le budget.
+    await page.locator('app-profile-image input').setInputFiles({name:'combined-too-large.gif',mimeType:'image/gif',buffer:padGif(Buffer.from(gif,'base64'),96*1024-16)});
+    await page.waitForFunction(()=>!!window.nativeExport);
+    check(await page.evaluate(()=>avatarTest.state().failed && !avatarTest.state().exported), 'Combined PNG plus GIF size checked after native cropping');
+    await page.locator('[data-qa="modal-ok"]').click();
+    check(await page.locator('app-modal-dialog').count()===1 && await page.locator('app-profile-image img').getAttribute('src')===savedPreview, 'Oversized cropped avatar cannot be submitted with OK');
+    await page.locator('[data-qa="modal-ok"]').press('Enter');
+    check(await page.locator('app-modal-dialog').count()===1 && !await page.evaluate(()=>avatarTest.state().verification), 'Enter cannot bypass the size guard or claim a successful save');
+    await page.evaluate(()=>{document.querySelector('app-modal-dialog').remove();avatarTest.enhance();window.nativeExport=null;});
+    check(await page.evaluate(()=>!avatarTest.state().pending && HTMLCanvasElement.prototype.toDataURL===window.originalCanvasExport), 'Cancel after a size rejection restores the native importer');
+    await page.locator('app-profile-image input').setInputFiles({name:'fits.gif',mimeType:'image/gif',buffer:padGif(Buffer.from(gif,'base64'),90*1024)});
+    await page.waitForFunction(()=>!!window.nativeExport);
+    const formSize=await page.evaluate(async()=>{
+      const data=avatarTest.bytes(window.nativeExport.split(',')[1]);
+      const form=new FormData();form.append('file',new Blob([data],{type:'image/png'}),'profile.png');
+      return {png:data.length,form:(await new Response(form).arrayBuffer()).byteLength,animated:!!avatarTest.extract(data)};
+    });
+    check(formSize.png<=96*1024 && formSize.form<102400 && formSize.animated, 'Accepted GIF plus PNG and multipart envelope fit the observed 102400-byte server limit');
     check(errors.length===0, 'No JavaScript exceptions: '+errors.join('\n'));
     console.log(`${passed} animated avatar checks passed`);
   } finally { await browser.close(); }

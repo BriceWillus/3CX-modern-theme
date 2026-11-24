@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.20
+// @version      2.0.0-beta.21
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -81,6 +81,10 @@
   const ANIMATED_AVATAR_MAGIC = "DEC3CXG1";
   const ANIMATED_AVATAR_MAX_GIF = 1024 * 1024;
   const ANIMATED_AVATAR_MAX_PNG = ANIMATED_AVATAR_MAX_GIF + 256 * 1024;
+  // Limite constatée sur ce serveur : 102400 octets par corps multipart.
+  // Garder une marge pour l'envoi du PNG enrichi et ses champs de formulaire.
+  const ANIMATED_AVATAR_FORM_LIMIT = 100 * 1024;
+  const ANIMATED_AVATAR_UPLOAD_LIMIT = ANIMATED_AVATAR_FORM_LIMIT - 4 * 1024;
   const animatedAvatarCache = new Map();
   const animatedAvatarRedispatch = new WeakSet();
   const avatarCrcTable = Uint32Array.from({ length:256 }, (_, value) => {
@@ -2280,6 +2284,17 @@
       crop.x + crop.width <= info.width && crop.y + crop.height <= info.height;
   }
 
+  function avatarUploadSizeError(length) {
+    return `Avatar trop lourd (${(length / 1024).toFixed(1).replace(".", ",")} Kio). ` +
+      "3CX limite l'import à 100 Kio pour le PNG et le GIF réunis. " +
+      "Le thème réserve 4 Kio de marge ; réduis le GIF avant de réessayer.";
+  }
+
+  function avatarCheckUploadSize(png) {
+    if (png.length > ANIMATED_AVATAR_UPLOAD_LIMIT) throw new Error(avatarUploadSizeError(png.length));
+    return png;
+  }
+
   function avatarExtractGif(png) {
     const chunks = avatarPngChunks(png);
     if (!chunks) return null;
@@ -2358,12 +2373,18 @@
       const png = originalExport.apply(this, args), crop = canvases.get(this);
       if (animatedAvatarImport !== state || !crop || !png.startsWith("data:image/png;base64,")) return png;
       try {
-        const enriched = avatarEmbedGif(avatarBase64ToBytes(png.split(",")[1]), state.gif, crop);
+        const enriched = avatarCheckUploadSize(avatarEmbedGif(avatarBase64ToBytes(png.split(",")[1]), state.gif, crop));
         state.exported = true;
+        state.failed = false;
+        state.error = "";
         return `data:image/png;base64,${avatarBytesToBase64(enriched)}`;
-      } catch {
-        if (!state.failed) animatedAvatarNotice("L'animation n'a pas pu être intégrée. 3CX conserve l'image fixe.");
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : "L'animation n'a pas pu être intégrée. Annule cet import et réessaie.";
+        if (!state.failed) animatedAvatarNotice(state.error);
         state.failed = true;
+        state.exported = false;
+        // Ce PNG sert uniquement à l'aperçu : la validation est bloquée tant
+        // que le résultat enrichi ne respecte pas la limite du serveur.
         return png;
       }
     });
@@ -2386,10 +2407,11 @@
 
   async function prepareAnimatedAvatarFile(input, file, serial) {
     try {
-      if (file.size > ANIMATED_AVATAR_MAX_GIF) throw new Error("Le GIF doit faire moins de 1 Mo.");
+      if (file.size > ANIMATED_AVATAR_MAX_GIF) throw new Error(avatarUploadSizeError(file.size));
       const gif = new Uint8Array(await file.arrayBuffer()), info = avatarGifInfo(gif);
       if (!info) throw new Error("GIF invalide ou trop grand : maximum 1024 × 1024 pixels et 600 images.");
       if (info.frames < 2) { if (serial === animatedAvatarImportSerial) redispatchAvatarFile(input); return; }
+      if (gif.length > ANIMATED_AVATAR_UPLOAD_LIMIT) throw new Error(avatarUploadSizeError(gif.length));
       const png = await avatarFirstFramePng(info);
       if (serial !== animatedAvatarImportSerial || !input.isConnected || !/^#\/settings(?:\/general)?(?:$|[?])/i.test(location.hash)) return;
       const state = { gif, info, png, seenCropper:false, exported:false, failed:false, restore:() => {},
@@ -2435,6 +2457,12 @@
       if (!dialog?.querySelector('img-cropper')) return;
       const ok = dialog.querySelector('[data-qa="modal-ok"]');
       if (ok && !ok.disabled && (event.type === "keydown" ? event.key === "Enter" : ok.contains(event.target))) {
+        if (animatedAvatarImport.failed) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          animatedAvatarNotice(animatedAvatarImport.error || "L'avatar animé n'est pas prêt. Annule cet import et réessaie.");
+          return;
+        }
         animatedAvatarImport.confirmed = true;
         animatedAvatarImport.seenCropper = true;
         if (animatedAvatarImport.exported && !animatedAvatarImport.failed) {
