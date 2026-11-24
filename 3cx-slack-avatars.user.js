@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.9
+// @version      2.0.0-beta.10
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -30,6 +30,8 @@
   const REDUNDANT_READ_RECEIPT_CLASS = "dec-slack-redundant-read";
   const HIDDEN_SENT_RECEIPT_CLASS = "dec-slack-native-sent-hidden";
   const SENT_RECEIPT_COPY_CLASS = "dec-slack-sent-receipt-copy";
+  const NATIVE_DOUBLE_CHECK_SELECTOR =
+    ".lucide-check-check, [lucideCheckCheck], [lucidecheckcheck]";
   const TYPING_INDICATOR_ID = "dec-slack-typing-indicator";
   const HIDDEN_NATIVE_TYPING_CLASS = "dec-slack-native-typing-hidden";
   const CONTROLS_ID = "dec-slack-controls";
@@ -2924,22 +2926,32 @@
       return false;
     }
 
-    // Depuis la mise à jour 3CX, le double coche Lucide remplace le libellé « Vu ».
-    const readIconSelector = ".lucide-check-check, [lucideCheckCheck], [lucidecheckcheck]";
-    if (receipt.matches(readIconSelector) || receipt.querySelector(readIconSelector)) {
+    const labels = [receipt, ...receipt.querySelectorAll("[title], [aria-label]")].flatMap(
+      (node) => ["title", "aria-label"].map((attribute) =>
+        (node.getAttribute(attribute) || "").trim(),
+      ),
+    );
+    if (labels.some((label) =>
+      /^(?:d[ée]livr[ée]s?|delivered|envoy[ée]s?|sent|non lu|unread)(?:$|\s)/i.test(label),
+    )) {
+      return false;
+    }
+    if (labels.some((label) => /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(label))) {
       return true;
     }
 
-    return [receipt, ...receipt.querySelectorAll("[title], [aria-label]")].some((node) =>
-      ["title", "aria-label"].some((attribute) =>
-        /^(vu|lu|read|seen)(?:\s+(?:par|by)\b.*)?$/i.test(
-          (node.getAttribute(attribute) || "").trim(),
-        ),
-      ),
-    );
+    // Le même double coche sert à « Délivré » et « Lu » ; seul « Lu » est bleu.
+    const icons = [
+      ...(receipt.matches(NATIVE_DOUBLE_CHECK_SELECTOR) ? [receipt] : []),
+      ...receipt.querySelectorAll(NATIVE_DOUBLE_CHECK_SELECTOR),
+    ];
+    return icons.some((icon) => icon.classList.contains("fillIconBlueVariant"));
   }
 
   function receiptLooksRead(receipt) {
+    if (receipt.querySelector('[data-qa="delivery-status"], svg.lucide')) {
+      return receiptHasReadMarker(receipt);
+    }
     if (receiptHasReadMarker(receipt)) {
       return true;
     }
@@ -3213,7 +3225,34 @@
     receipt.classList.add(HIDDEN_SENT_RECEIPT_CLASS);
   }
 
+  function restoreNativeReceipts(messages) {
+    messages.forEach((message) => {
+      message.classList.remove(LATEST_READ_CLASS);
+      message.querySelectorAll('delivered-check:not([data-dec-created="true"])').forEach((receipt) => {
+        receipt.classList.remove(
+          HIDDEN_READ_RECEIPT_CLASS,
+          HIDDEN_SENT_RECEIPT_CLASS,
+          REDUNDANT_READ_RECEIPT_CLASS,
+          READ_AVATAR_CLASS,
+          "dec-v2-receipt-hidden",
+        );
+        receipt.style.removeProperty("--dec-read-receipt-avatar");
+        delete receipt.dataset.decReadProfile;
+      });
+      message.querySelectorAll(
+        `.${READ_AVATAR_CLASS}[data-dec-created="true"], ` +
+        '.dec-v2-read-avatar[data-dec-created="true"], ' +
+        `.${SENT_RECEIPT_COPY_CLASS}[data-dec-created="true"]`,
+      ).forEach((decoration) => decoration.remove());
+    });
+  }
+
   function enhanceReadReceipts() {
+    const contact = directConversationProfileFromHeader();
+    if (!contact) {
+      restoreNativeReceipts([...document.querySelectorAll(MESSAGE_SELECTOR)]);
+      return;
+    }
     const nativeReceipts = [
       ...document.querySelectorAll(
         `${MESSAGE_SELECTOR} delivered-check:not([data-dec-created="true"])`,
@@ -3226,39 +3265,11 @@
         ...analyzeReceipt(receipt),
       }))
       .filter((record) => record.message);
-    const directConversation = Boolean(directConversationProfileFromHeader());
-    if (directConversation && records.some((record) => !record.isRead)) {
-      const visibleMessages = [...document.querySelectorAll(MESSAGE_SELECTOR)];
-      const learnedReadSignatures = new Set(
-        records.filter((record) => record.isRead).map((record) => record.signature),
-      );
-
-      const messagesBeforeContactReply = new WeakSet();
-      let contactReplyFound = false;
-      for (let index = visibleMessages.length - 1; index >= 0; index -= 1) {
-        const message = visibleMessages[index];
-        if (contactReplyFound) {
-          messagesBeforeContactReply.add(message);
-        }
-        if (message.querySelector(".message-inner.message-left")) {
-          contactReplyFound = true;
-        }
-      }
-
-      records.forEach((record) => {
-        if (messagesBeforeContactReply.has(record.message)) {
-          learnedReadSignatures.add(record.signature);
-        }
-      });
-      records.forEach((record) => {
-        record.isRead ||= learnedReadSignatures.has(record.signature);
-      });
-    }
     const readRecords = records.filter((record) => record.isRead);
     const latestRead = readRecords.at(-1) || null;
     const latestMessage = latestRead?.message || null;
     const latestReceipt = latestRead?.receipt || null;
-    const directProfile = latestRead ? directConversationProfileFromHeader() : null;
+    const directProfile = latestRead ? contact : null;
     const portraitHost = latestMessage ? fullWidthReceiptHost(latestMessage) : null;
     const validSentHosts = new Set();
 
@@ -3909,14 +3920,17 @@
   }
 
   function enhanceModernReceipts(records, contact = directConversationProfileFromHeader()) {
+    if (!contact) {
+      restoreNativeReceipts(records.map((record) => record.message));
+      return;
+    }
     const receipts = records.map((record) => ({
       ...record,
       receipt: record.message.querySelector("delivered-check:not([data-dec-created])"),
     }));
     const read = receiptHasReadMarker;
-    // En conversation directe, une réponse place aussi l'interlocuteur à ce
-    // point de l'historique. Un nouvel envoi non lu ne déplace pas son portrait.
-    const latest = receipts.filter((r) => (r.own && read(r.receipt)) || (contact && !r.own)).at(-1);
+    // Le portrait suit uniquement le dernier envoi confirmé lu par 3CX.
+    const latest = receipts.filter((r) => r.own && read(r.receipt)).at(-1);
     receipts.forEach(({ message, own, receipt }) => {
       message.classList.remove(LATEST_READ_CLASS);
       message
