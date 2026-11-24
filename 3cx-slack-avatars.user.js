@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.13
+// @version      2.0.0-beta.14
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -50,6 +50,11 @@
   const CONTROLS_ID = "dec-slack-controls";
   const CONTROLS_CONTENT_ID = "dec-slack-controls-content";
   const FREE_EDITION_BANNER_CLASS = "dec-slack-free-edition-hidden";
+  const LIBRARY_PANEL_ID = "dec-slack-message-library";
+  const LIBRARY_STYLE_ID = "dec-slack-message-library-styles";
+  const STORAGE_FAVORITES = "decSlackFavoritesV1";
+  const PIN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3 21 8l-4 1-3 5-1 4-7-7 4-1 5-3z"/><path d="m2 22 6-6"/></svg>';
+  const GALLERY_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L6 21"/></svg>';
   const STORAGE_LAYOUT = "decSlackLayout";
   const STORAGE_THEME = "decSlackTheme";
   const STORAGE_ACCENT = "decSlackAccent";
@@ -129,6 +134,23 @@
   })();
   let originalPreviewObserver = null;
   let currentOwnProfile = null;
+  const libraryMessages = new Map();
+  const libraryConversations = new Map();
+  let libraryAccount = "";
+  let libraryFavorites = [];
+  let libraryOpenTab = "";
+  let librarySearch = "";
+  let libraryFilter = "all";
+  let libraryAllChats = false;
+  let libraryRevision = 0;
+  let libraryReturnFocus = null;
+  let libraryInitialized = false;
+  let libraryPendingJump = null;
+  const nativeOriginalImages = new Map();
+  let originalDownloadToken = null;
+  let originalDownloadTokenPromise = null;
+  let originalAuthEpoch = 0;
+  let originalAuthRetryAfter = 0;
 
   if (window[SCRIPT_MARKER]) {
     return;
@@ -3716,6 +3738,480 @@
     window.setTimeout(clearAnimationClass, 700);
   }
 
+  // Favoris privés au compte connecté ; la galerie ne conserve que les métadonnées
+  // des pièces jointes rencontrées pendant cette session, jamais les tickets 3CX.
+  function libraryElement(tag, className, text) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text !== undefined) element.textContent = text;
+    element.dataset.decCreated = "true";
+    return element;
+  }
+
+  function libraryButton(label, action, className = "") {
+    const button = libraryElement("button", className, label);
+    button.type = "button";
+    button.addEventListener("click", action);
+    return button;
+  }
+
+  function libraryChat() {
+    const id = window.location.hash.match(/^#\/chat\/(\d+)(?:[/?]|$)/)?.[1];
+    if (!id) return null;
+    const title = document.querySelector(
+      'chat-messages-header [data-qa="chat-name"], chat-messages-header #showParticipants',
+    )?.textContent.trim();
+    return title ? { id, title } : null;
+  }
+
+  function libraryFilePath(value) {
+    try {
+      const url = new URL(value, window.location.origin);
+      if (url.origin !== window.location.origin ||
+          !/^\/MyPhone\/downloadChatFile\/[^/]+$/i.test(url.pathname)) return "";
+      return url.pathname;
+    } catch { return ""; }
+  }
+
+  function libraryAttachments(message) {
+    const attachments = new Map();
+    message.querySelectorAll("app-chat-message-file-preview, app-chat-message-file, file-preview, preview-text-message")
+      .forEach((preview) => {
+        const image = preview.querySelector('img[src*="/MyPhone/downloadChatFile/"]');
+        const link = preview.querySelector('a[href*="/MyPhone/downloadChatFile/"]');
+        const path = libraryFilePath(image?.getAttribute("src") || link?.getAttribute("href"));
+        const name = (preview.querySelector("a[download]")?.getAttribute("download") ||
+          image?.getAttribute("title") || preview.querySelector('[data-qa="message-filename"]')?.textContent || link?.getAttribute("download") ||
+          preview.querySelector("[title]")?.getAttribute("title") || preview.textContent || "Pièce jointe")
+          .replace(/^(?:ouvrir|open|télécharger|download)\s+/i, "").trim().slice(0,500);
+        if (!path && !preview.matches("app-chat-message-file")) return;
+        const id = path ? path.replace(/\.preview$/i, "") : `document:${libraryHash(name)}`;
+        attachments.set(id, { id, name, kind: image ? "image" : "document",
+          previewPath: image ? `${id}.preview` : "" });
+      });
+    return [...attachments.values()];
+  }
+
+  function libraryDay(value, now = new Date()) {
+    const text = String(value || "").trim().toLocaleLowerCase("fr-FR");
+    const explicit = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const iso = text.match(/^\d{4}-\d{2}-\d{2}$/);
+    if (iso) return iso[0];
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (explicit) date.setFullYear(Number(explicit[3]), Number(explicit[2])-1, Number(explicit[1]));
+    else if (/^(hier|yesterday)$/.test(text)) date.setDate(date.getDate()-1);
+    else if (!/^(aujourd'hui|today)$/.test(text)) {
+      const days = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+      const target = days.indexOf(text);
+      if (target < 0) return text;
+      date.setDate(date.getDate() - (date.getDay()-target+7)%7);
+    }
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  }
+
+  function libraryHash(value) {
+    let a = 2166136261, b = 5381;
+    for (const c of value) {
+      a = Math.imul(a ^ c.charCodeAt(0), 16777619);
+      b = Math.imul(b, 33) ^ c.charCodeAt(0);
+    }
+    return `${(a>>>0).toString(36)}${(b>>>0).toString(36)}`;
+  }
+
+  function libraryMessageText(message) {
+    const source = message.querySelector("app-chat-message-text, .message-text-internal");
+    if (!source) return "";
+    const copy = source.cloneNode(true);
+    copy.querySelectorAll("img").forEach(img => img.replaceWith(document.createTextNode(img.alt || "")));
+    copy.querySelectorAll("[data-dec-created='true']").forEach(el => el.remove());
+    return (copy.textContent || "").trim();
+  }
+
+  function readLibraryFavorites() {
+    try {
+      const entries = JSON.parse(window.localStorage.getItem(`${STORAGE_FAVORITES}:${libraryAccount}`) || "[]");
+      return Array.isArray(entries) ? entries.filter(entry => entry && typeof entry.id === "string" &&
+        /^\d+$/.test(entry.chatId) && Array.isArray(entry.attachments)).slice(0,500).map(entry => ({
+          ...entry,
+          // Les URL authentifiées ne sont jamais relues du stockage.
+          attachments: entry.attachments.map(file => ({ ...file, id: /^document:[a-z0-9]+$/.test(file.id) ? file.id : libraryFilePath(file.id),
+            previewPath: libraryFilePath(file.previewPath) })).filter(file => file.id),
+        })) : [];
+    } catch { return []; }
+  }
+
+  function libraryNotice(text) {
+    let notice = document.getElementById("dec-slack-library-notice");
+    if (!notice) {
+      notice = libraryElement("div", "", text);
+      notice.id = "dec-slack-library-notice";
+      notice.setAttribute("role", "status");
+      document.body.appendChild(notice);
+    }
+    notice.textContent = text;
+    window.clearTimeout(libraryNotice.timer);
+    libraryNotice.timer = window.setTimeout(() => notice.remove(), 6000);
+  }
+
+  function saveLibraryFavorites(next) {
+    if (!libraryAccount) return false;
+    try {
+      window.localStorage.setItem(`${STORAGE_FAVORITES}:${libraryAccount}`, JSON.stringify(next));
+      libraryFavorites = next;
+      libraryRevision++;
+      return true;
+    } catch {
+      libraryNotice("Le navigateur n’a pas pu enregistrer les favoris. Vérifie l’espace de stockage disponible.");
+      return false;
+    }
+  }
+
+  function toggleLibraryFavorite(entry) {
+    const found = libraryFavorites.some(item => item.id === entry.id);
+    if (!found && libraryFavorites.length >= 500) {
+      libraryNotice("La limite de 500 favoris est atteinte. Retire une épingle pour en ajouter une autre.");
+      return;
+    }
+    const next = found ? libraryFavorites.filter(item => item.id !== entry.id) :
+      [...libraryFavorites, { ...entry, note: "", savedAt: Date.now() }];
+    if (saveLibraryFavorites(next)) {
+      updateLibraryPins();
+      renderMessageLibrary(true);
+    }
+  }
+
+  function updateLibraryPins() {
+    const ids = new Set(libraryFavorites.map(entry => entry.id));
+    for (const [id, item] of libraryMessages) {
+      const button = item.message.querySelector(":scope > .dec-library-pin");
+      if (!button) continue;
+      const pinned = ids.has(id);
+      button.dataset.pinned = String(pinned);
+      button.setAttribute("aria-pressed", String(pinned));
+      button.title = pinned ? "Retirer des favoris" : "Épingler ce message";
+      button.setAttribute("aria-label", button.title);
+    }
+  }
+
+  function jumpToLibraryMessage(entry) {
+    const chat = libraryChat();
+    if (chat?.id !== entry.chatId) {
+      libraryPendingJump = { id: entry.id, chatId: entry.chatId, until: Date.now()+10000 };
+      window.location.hash = `/chat/${entry.chatId}`;
+      return;
+    }
+    const message = libraryMessages.get(entry.id)?.message;
+    if (!message?.isConnected) {
+      libraryNotice("Ce message est plus haut dans l’historique. Remonte le fil pour le charger ; son favori reste disponible ici.");
+      return;
+    }
+    if (modernScrollState) { modernScrollState.pinned = false; modernScrollState.settleUntil = 0; }
+    message.scrollIntoView({ block: "center", behavior: "auto" });
+    message.classList.add("dec-library-highlight");
+    window.setTimeout(() => message.classList.remove("dec-library-highlight"),2000);
+  }
+
+  function openLibraryAttachment(entry, attachment) {
+    const message = libraryMessages.get(entry.id)?.message;
+    if (!message?.isConnected || libraryChat()?.id !== entry.chatId) {
+      jumpToLibraryMessage(entry);
+      libraryNotice("Reviens au message dans sa conversation pour ouvrir la pièce jointe.");
+      return;
+    }
+    const image = [...message.querySelectorAll('img[src*="/MyPhone/downloadChatFile/"]')]
+      .find(el => libraryFilePath(el.getAttribute("src")).replace(/\.preview$/i,"") === attachment.id);
+    const documentPreview = [...message.querySelectorAll("app-chat-message-file")].find(el =>
+      el.querySelector('[data-qa="message-filename"]')?.textContent.trim() === attachment.name);
+    const preview = image?.closest("app-chat-message-file-preview, file-preview, preview-text-message") || documentPreview ||
+      [...message.querySelectorAll("app-chat-message-file-preview, file-preview")].find(el =>
+        [...el.querySelectorAll("a[href]")].some(a => libraryFilePath(a.href) === attachment.id));
+    const target = image || preview?.querySelector("a[download], [data-qa='download'], a, button, [title]");
+    if (target) target.click();
+    else libraryNotice("Utilise le bouton de téléchargement sur le message d’origine.");
+  }
+
+  function closeMessageLibrary(restoreFocus = true) {
+    const panel = document.getElementById(LIBRARY_PANEL_ID);
+    if (panel) panel.hidden = true;
+    libraryOpenTab = "";
+    document.querySelectorAll("[data-dec-library-tab]").forEach(button => button.setAttribute("aria-expanded","false"));
+    if (restoreFocus && libraryReturnFocus?.isConnected) libraryReturnFocus.focus();
+  }
+
+  function openMessageLibrary(tab, button) {
+    ensureMessageLibrary();
+    if (libraryOpenTab === tab && !document.getElementById(LIBRARY_PANEL_ID).hidden) {
+      closeMessageLibrary(); return;
+    }
+    libraryReturnFocus = button || document.activeElement;
+    libraryOpenTab = tab;
+    librarySearch = "";
+    const panel = document.getElementById(LIBRARY_PANEL_ID);
+    panel.hidden = false;
+    panel.querySelector("input").value = "";
+    document.querySelectorAll("[data-dec-library-tab]").forEach(el =>
+      el.setAttribute("aria-expanded",String(el.dataset.decLibraryTab === tab)));
+    renderMessageLibrary(true);
+    panel.querySelector("input").focus();
+  }
+
+  function ensureMessageLibrary() {
+    if (!document.getElementById(LIBRARY_STYLE_ID)) {
+      const style = document.createElement("style");
+      style.id = LIBRARY_STYLE_ID;
+      style.textContent = `
+        #${LIBRARY_PANEL_ID} { position:fixed; z-index:2147483000; top:70px; right:16px; bottom:20px;
+          display:flex; flex-direction:column; width:min(410px,calc(100vw - 32px)); box-sizing:border-box;
+          background:var(--slack-panel,#242429); color:var(--slack-ink,#f8f8fa); border:1px solid var(--slack-line,#56525b);
+          border-radius:12px; box-shadow:0 10px 36px #0005; overflow:hidden; font:14px/1.45 "Segoe UI",sans-serif; }
+        #${LIBRARY_PANEL_ID}[hidden] { display:none!important; }
+        #${LIBRARY_PANEL_ID} * { box-sizing:border-box; }
+        #${LIBRARY_PANEL_ID} header { display:flex; align-items:center; gap:8px; padding:14px 16px 8px; }
+        #${LIBRARY_PANEL_ID} h2 { flex:1; margin:0; font-size:17px; color:inherit; }
+        #${LIBRARY_PANEL_ID} button { cursor:pointer; color:inherit; background:transparent; border:1px solid var(--slack-line,#56525b); border-radius:7px; padding:5px 9px; font:inherit; }
+        #${LIBRARY_PANEL_ID} button:hover { background:var(--slack-hover,#ffffff12); }
+        #${LIBRARY_PANEL_ID} button:focus-visible, #${LIBRARY_PANEL_ID} input:focus-visible,
+        #${LIBRARY_PANEL_ID} textarea:focus-visible { outline:2px solid var(--slack-blue,#79b8ff); outline-offset:2px; }
+        #${LIBRARY_PANEL_ID} .dec-library-tools { display:flex; gap:6px; flex-wrap:wrap; padding:8px 16px; }
+        #${LIBRARY_PANEL_ID} input, #${LIBRARY_PANEL_ID} textarea { width:100%; color:inherit; background:var(--slack-hover,#ffffff0a); border:1px solid var(--slack-line,#56525b); border-radius:7px; padding:8px; font:inherit; }
+        #${LIBRARY_PANEL_ID} .dec-library-tools button[aria-pressed='true'] { color:var(--slack-blue,#79b8ff); border-color:currentColor; }
+        #${LIBRARY_PANEL_ID} .dec-library-summary { margin:0; padding:2px 16px 10px; color:var(--slack-muted,#b8b5bc); font-size:12px; }
+        #${LIBRARY_PANEL_ID} .dec-library-list { overflow:auto; flex:1; min-height:0; padding:0 12px 12px; overscroll-behavior:contain; }
+        #${LIBRARY_PANEL_ID} .dec-library-card { padding:12px; margin:8px 0; border:1px solid var(--slack-line,#56525b); border-radius:9px; overflow-wrap:anywhere; }
+        #${LIBRARY_PANEL_ID} .dec-library-meta { font-size:12px; color:var(--slack-muted,#b8b5bc); margin-bottom:7px; }
+        #${LIBRARY_PANEL_ID} .dec-library-text { margin:6px 0 10px; white-space:pre-wrap; max-height:180px; overflow:auto; }
+        #${LIBRARY_PANEL_ID} .dec-library-card img { display:block; max-width:100%; max-height:180px; object-fit:contain; margin:auto; background:transparent!important; border-radius:5px; }
+        #${LIBRARY_PANEL_ID} .dec-library-file { display:block; width:100%; text-align:left; margin:6px 0; }
+        #${LIBRARY_PANEL_ID} .dec-library-file span { display:block; margin-top:5px; }
+        #${LIBRARY_PANEL_ID} .dec-library-card textarea { min-height:52px; max-height:180px; resize:vertical; margin:6px 0; font-size:13px; }
+        #${LIBRARY_PANEL_ID} .dec-library-card footer { display:flex; gap:8px; justify-content:space-between; margin-top:8px; }
+        #${LIBRARY_PANEL_ID} .dec-library-card footer button { font-size:12px; }
+        #${LIBRARY_PANEL_ID} .dec-library-empty { padding:24px 10px; color:var(--slack-muted,#b8b5bc); }
+        chat-message:has(> .dec-library-pin) { position:relative!important; }
+        chat-message > .dec-library-pin { position:absolute!important; top:3px; right:8px; z-index:8;
+          display:grid!important; place-items:center; width:28px; height:28px; padding:4px; color:var(--slack-muted,#aaa);
+          background:var(--slack-panel,#242429); border:1px solid var(--slack-line,#56525b); border-radius:7px; cursor:pointer; opacity:0; }
+        chat-message:hover > .dec-library-pin, chat-message:focus-within > .dec-library-pin,
+        chat-message > .dec-library-pin[data-pinned='true'] { opacity:1; }
+        chat-message > .dec-library-pin[data-pinned='true'] { color:var(--slack-blue,#79b8ff); }
+        chat-message > .dec-library-pin[data-pinned='true'] svg { fill:currentColor; fill-opacity:.25; }
+        html.dec-slack-layout-split chat-message.dec-library-own > .dec-library-pin { right:auto; left:8px; }
+        chat-message.dec-library-highlight { outline:2px solid var(--slack-blue,#79b8ff)!important; outline-offset:-2px; }
+        #dec-slack-library-notice { position:fixed; z-index:2147483500; bottom:20px; left:50%; transform:translateX(-50%);
+          width:max-content; max-width:calc(100vw - 32px); padding:12px 18px; color:var(--slack-ink,#fff);
+          background:var(--slack-panel,#242429); border:1px solid var(--slack-line,#777); border-radius:9px; box-shadow:0 6px 24px #0005; font:14px/1.4 "Segoe UI",sans-serif; }
+        chat-message app-chat-message-file-preview, chat-message app-chat-message-file-preview img { background:transparent!important; }
+        @media(hover:none) { chat-message > .dec-library-pin { opacity:1; } }
+        @media(max-width:600px) { #${LIBRARY_PANEL_ID} { top:60px; right:8px; bottom:8px; width:calc(100vw - 16px); } }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    const controls = document.getElementById(CONTROLS_CONTENT_ID);
+    if (controls) for (const [tab,label,icon] of [["favorites","Favoris",PIN_ICON],["gallery","Galerie",GALLERY_ICON]]) {
+      if (controls.querySelector(`[data-dec-library-tab='${tab}']`)) continue;
+      const button = libraryButton("", () => openMessageLibrary(tab,button), "dec-slack-control-button");
+      button.innerHTML = icon;
+      button.dataset.decLibraryTab = tab;
+      button.title = label;
+      button.setAttribute("aria-label",label);
+      button.setAttribute("aria-controls",LIBRARY_PANEL_ID);
+      button.setAttribute("aria-expanded","false");
+      controls.appendChild(button);
+    }
+    if (!document.getElementById(LIBRARY_PANEL_ID)) {
+      const panel = libraryElement("aside");
+      panel.id = LIBRARY_PANEL_ID;
+      panel.hidden = true;
+      panel.setAttribute("aria-label","Favoris et galerie");
+      const header = libraryElement("header");
+      const title = libraryElement("h2");
+      title.id = "dec-library-title";
+      panel.setAttribute("aria-labelledby",title.id);
+      const close = libraryButton("×", () => closeMessageLibrary());
+      close.setAttribute("aria-label","Fermer le panneau");
+      header.append(title,close);
+      const tools = libraryElement("div","dec-library-tools");
+      const search = libraryElement("input");
+      search.type = "search";
+      search.placeholder = "Rechercher dans les favoris…";
+      search.setAttribute("aria-label","Rechercher dans le panneau");
+      search.addEventListener("input", () => { librarySearch = search.value; renderMessageLibrary(true); });
+      tools.appendChild(search);
+      const filters = libraryElement("div","dec-library-tools dec-library-filters");
+      const summary = libraryElement("p","dec-library-summary");
+      const list = libraryElement("div","dec-library-list");
+      panel.append(header,tools,filters,summary,list);
+      document.body.appendChild(panel);
+    }
+    if (!libraryInitialized) {
+      libraryInitialized = true;
+      document.addEventListener("keydown",event => {
+        if (event.key === "Escape" && libraryOpenTab && !document.querySelector("modal-container.show")) {
+          event.preventDefault(); closeMessageLibrary();
+        }
+      });
+      window.addEventListener("storage",event => {
+        if (event.key === `${STORAGE_FAVORITES}:${libraryAccount}`) {
+          libraryFavorites = readLibraryFavorites(); libraryRevision++;
+          updateLibraryPins(); renderMessageLibrary(true);
+        }
+      });
+    }
+  }
+
+  function renderMessageLibrary(force = false) {
+    const panel = document.getElementById(LIBRARY_PANEL_ID);
+    if (!panel || panel.hidden || !libraryOpenTab) return;
+    if (!force && panel.contains(document.activeElement) && document.activeElement.matches("textarea")) return;
+    const chat = libraryChat();
+    const signature = JSON.stringify([libraryOpenTab,chat?.id,libraryRevision,librarySearch,libraryFilter,libraryAllChats]);
+    if (!force && panel.dataset.signature === signature) return;
+    panel.dataset.signature = signature;
+    const favorites = libraryOpenTab === "favorites";
+    panel.querySelector("h2").textContent = favorites ? "Favoris" : "Galerie";
+    panel.querySelector("input").placeholder = favorites ? "Rechercher dans les favoris…" : "Nom du fichier ou auteur…";
+    const filters = panel.querySelector(".dec-library-filters");
+    filters.replaceChildren();
+    if (favorites) {
+      for (const [all,label] of [[false,"Cette conversation"],[true,"Toutes les conversations"]]) {
+        const button = libraryButton(label, () => { libraryAllChats = all; renderMessageLibrary(true); });
+        button.setAttribute("aria-pressed",String(libraryAllChats === all)); filters.appendChild(button);
+      }
+    } else {
+      for (const [kind,label] of [["all","Tout"],["image","Images"],["document","Documents"]]) {
+        const button = libraryButton(label, () => { libraryFilter = kind; renderMessageLibrary(true); });
+        button.setAttribute("aria-pressed",String(libraryFilter === kind)); filters.appendChild(button);
+      }
+    }
+    const query = librarySearch.trim().toLocaleLowerCase("fr-FR");
+    const list = panel.querySelector(".dec-library-list");
+    const scrollTop = list.scrollTop;
+    list.replaceChildren();
+    let entries = favorites ? libraryFavorites.filter(entry => libraryAllChats || entry.chatId === chat?.id) :
+      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.attachments.length);
+    entries = entries.filter(entry => !query || [entry.text,entry.author,entry.chatTitle,entry.note,
+      ...entry.attachments.map(file => file.name)].join(" ").toLocaleLowerCase("fr-FR").includes(query));
+    entries.sort((a,b) => favorites ? b.savedAt-a.savedAt : `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+    let count = 0;
+    for (const entry of entries) {
+      const files = favorites ? entry.attachments : entry.attachments.filter(file => libraryFilter === "all" || file.kind === libraryFilter);
+      if (!favorites && !files.length) continue;
+      count += favorites ? 1 : files.length;
+      const card = libraryElement("article","dec-library-card");
+      const meta = libraryElement("div","dec-library-meta",`${entry.author} · ${entry.date} ${entry.time}${favorites && libraryAllChats ? ` · ${entry.chatTitle}` : ""}`);
+      card.appendChild(meta);
+      if (entry.text) card.appendChild(libraryElement("p","dec-library-text",entry.text));
+      for (const file of files) {
+        const button = libraryButton("", () => openLibraryAttachment(entry,file), "dec-library-file");
+        button.setAttribute("aria-label",`Ouvrir ${file.name}`);
+        if (file.kind === "image" && file.previewPath) {
+          const image = libraryElement("img");
+          image.alt = ""; image.loading = "lazy"; image.decoding = "async";
+          const native = nativeOriginalImages.get(file.id);
+          image.src = native?.expires > Date.now() ? native.url : file.previewPath;
+          image.addEventListener("error", () => {
+            if (image.getAttribute("src") !== file.previewPath) image.src = file.previewPath;
+            else image.hidden = true;
+          });
+          if (/\.(?:png|webp|gif)$/i.test(file.name) && !(native?.expires > Date.now())) {
+            image.dataset.decOriginalPreviewUrl = new URL(file.id,window.location.origin).href;
+            image.dataset.decOriginalPreviewState = "pending";
+            const previewObserver = ensureOriginalPreviewObserver();
+            if (previewObserver) previewObserver.observe(image);
+            else window.setTimeout(() => loadOriginalImagePreview(image),0);
+          }
+          button.appendChild(image);
+        }
+        button.appendChild(libraryElement("span","",file.name)); card.appendChild(button);
+      }
+      if (favorites) {
+        const note = libraryElement("textarea");
+        note.placeholder = "Ajouter une note personnelle…"; note.maxLength = 4000;
+        note.setAttribute("aria-label",`Note personnelle — ${entry.author}, ${entry.date} ${entry.time}`);
+        note.value = entry.note || "";
+        note.addEventListener("input", () => {
+          const next = libraryFavorites.map(item => item.id === entry.id ? {...item,note:note.value} : item);
+          if (saveLibraryFavorites(next)) panel.dataset.signature = "";
+        });
+        card.appendChild(note);
+      }
+      const actions = libraryElement("footer");
+      actions.appendChild(libraryButton("Voir le message", () => jumpToLibraryMessage(entry)));
+      const pinned = libraryFavorites.some(item => item.id === entry.id);
+      const pin = libraryButton(pinned ? "Retirer l’épingle" : "Épingler", () => toggleLibraryFavorite(entry));
+      pin.setAttribute("aria-pressed",String(pinned));
+      actions.appendChild(pin); card.appendChild(actions); list.appendChild(card);
+    }
+    if (!count) list.appendChild(libraryElement("p","dec-library-empty",query ? "Aucun résultat." :
+      favorites ? "Épingle un message à l’aide du bouton qui apparaît à son survol." : "Aucune pièce jointe chargée pour ce filtre."));
+    panel.querySelector(".dec-library-summary").textContent = favorites ?
+      `${count} favori${count>1?"s":""} · Enregistrés dans ce navigateur pour ton compte.` :
+      `${count} pièce${count>1?"s":""} jointe${count>1?"s":""} · ${chat?.title || "Ouvre une conversation"}. Remonte le fil pour compléter la galerie.`;
+    list.scrollTop = scrollTop;
+  }
+
+  function enhanceMessageLibrary(records) {
+    const account = currentOwnProfile?.extension || document.querySelector('app-header app-avatar img[alt]')?.getAttribute("alt") || "";
+    if (account !== libraryAccount) {
+      libraryAccount = account;
+      libraryFavorites = account ? readLibraryFavorites() : [];
+      libraryConversations.clear(); libraryMessages.clear(); nativeOriginalImages.clear();
+      originalDownloadToken = null; originalDownloadTokenPromise = null; originalAuthRetryAfter = 0; originalAuthEpoch++;
+      libraryPendingJump = null; libraryRevision++; closeMessageLibrary(false);
+    }
+    ensureMessageLibrary();
+    const chat = libraryChat();
+    libraryMessages.clear();
+    if (!chat || !account) { renderMessageLibrary(); return; }
+    let gallery = libraryConversations.get(chat.id);
+    if (!gallery) { gallery = new Map(); libraryConversations.set(chat.id,gallery); }
+    const duplicates = new Map();
+    for (const record of records) {
+      const {message,own,profile,time} = record;
+      const attachments = libraryAttachments(message);
+      const text = libraryMessageText(message);
+      if (!text && !attachments.length) continue;
+      const day = time?.getAttribute("title") || message.querySelector(".new-day-title")?.textContent || "";
+      const date = libraryDay(day);
+      const author = own ? "Moi" : profile?.name || message.querySelector(".sender-name,.message-name")?.textContent.trim() || "Participant";
+      const authorKey = own ? account : profile?.extension || author;
+      const clock = time?.textContent.trim() || "";
+      const fingerprint = JSON.stringify([authorKey,date,clock,text,attachments.map(file=>file.id)]);
+      const ordinal = duplicates.get(fingerprint) || 0;
+      duplicates.set(fingerprint,ordinal+1);
+      const id = `${chat.id}:${libraryHash(fingerprint)}:${ordinal}`;
+      const entry = {id,chatId:chat.id,chatTitle:chat.title,author,authorKey,date,time:clock,text,attachments};
+      libraryMessages.set(id,{message,entry});
+      if (attachments.length && JSON.stringify(gallery.get(id)) !== JSON.stringify(entry)) {
+        gallery.set(id,entry); libraryRevision++;
+      }
+      // Une limite de métadonnées borne les longues sessions sans précharger les fichiers.
+      if (gallery.size > 2000) gallery.delete(gallery.keys().next().value);
+      message.classList.toggle("dec-library-own",own);
+      let pin = message.querySelector(":scope > .dec-library-pin");
+      if (!pin) {
+        pin = libraryButton("", () => {
+          const item = libraryMessages.get(pin.dataset.messageId);
+          if (item) toggleLibraryFavorite(item.entry);
+        }, "dec-library-pin");
+        pin.innerHTML = PIN_ICON;
+        message.appendChild(pin);
+      }
+      pin.dataset.messageId = id;
+    }
+    updateLibraryPins();
+    if (libraryPendingJump?.chatId === chat.id && records.length) {
+      const target = libraryMessages.get(libraryPendingJump.id);
+      if (target || Date.now() > libraryPendingJump.until) {
+        const pending = libraryPendingJump; libraryPendingJump = null;
+        window.requestAnimationFrame(() => {
+          if (libraryChat()?.id === pending.chatId) jumpToLibraryMessage({id:pending.id,chatId:pending.chatId});
+        });
+      }
+    }
+    renderMessageLibrary();
+  }
+
   function currentChatSessionId() {
     const link = document.querySelector(
       'a[href*="/MyPhone/downloadChatFile/"][href*="sessionId="]',
@@ -3762,35 +4258,133 @@
       if (originalUrl.origin !== window.location.origin) {
         return "";
       }
-      originalUrl.searchParams.set("sessionId", sessionId);
+      if (sessionId) originalUrl.searchParams.set("sessionId", sessionId);
       return originalUrl.href;
     } catch {
       return "";
     }
   }
 
-  function loadOriginalImagePreview(image) {
+  async function originalDownloadRequest(path, options) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(),10000);
+    try {
+      return await fetch(new URL(path,window.location.origin).href, {
+        ...options, credentials:"same-origin", redirect:"error", cache:"no-store", signal:controller.signal,
+      });
+    } finally { window.clearTimeout(timer); }
+  }
+
+  async function originalDownloadAccessToken() {
+    if (Date.now() < originalAuthRetryAfter) throw new Error("Réessai différé");
+    if (originalDownloadToken?.expires > Date.now()) return originalDownloadToken.value;
+    if (originalDownloadTokenPromise) return originalDownloadTokenPromise;
+    const epoch = originalAuthEpoch;
+    const pending = (async () => {
+      // Même renouvellement que le client 3CX : le cookie de session reste dans
+      // le navigateur. Aucun mot de passe, jeton ou ticket n'est stocké ni journalisé.
+      const response = await originalDownloadRequest("/connect/token", {
+        method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded",Accept:"application/json"},
+        body:new URLSearchParams({grant_type:"refresh_token",client_id:"Webclient"}).toString(),
+      });
+      if (!response.ok) throw new Error("Session 3CX indisponible");
+      const token = await response.json();
+      if (epoch !== originalAuthEpoch || typeof token.access_token !== "string" || !token.access_token) {
+        throw new Error("Session 3CX modifiée");
+      }
+      originalDownloadToken = { value:token.access_token,
+        expires:Date.now()+Math.max(0,Math.min(60,Number(token.expires_in)||60)-5)*1000 };
+      return token.access_token;
+    })();
+    originalDownloadTokenPromise = pending;
+    try { return await pending; }
+    catch (error) { if (epoch === originalAuthEpoch) originalAuthRetryAfter = Date.now()+60000; throw error; }
+    finally { if (originalDownloadTokenPromise === pending) originalDownloadTokenPromise = null; }
+  }
+
+  async function originalDownloadTicket() {
+    const epoch = originalAuthEpoch;
+    const token = await originalDownloadAccessToken();
+    const response = await originalDownloadRequest("/xapi/v1/MyUser/Pbx.IssueDownloadTicket", {
+      method:"POST", headers:{Authorization:`Bearer ${token}`,Accept:"application/json"},
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        originalDownloadToken = null; originalAuthRetryAfter = Date.now()+60000;
+      }
+      throw new Error("Ticket de téléchargement indisponible");
+    }
+    const result = await response.json();
+    if (epoch !== originalAuthEpoch || typeof result.Ticket !== "string" || !result.Ticket) {
+      throw new Error("Ticket de téléchargement invalide");
+    }
+    return result.Ticket;
+  }
+
+  function probeOriginalImage(url) {
+    return new Promise((resolve,reject) => {
+      const probe = new Image();
+      probe.decoding = "async";
+      const finish = callback => {
+        window.clearTimeout(timer); probe.onload = null; probe.onerror = null; callback();
+      };
+      const timer = window.setTimeout(() => finish(() => reject(new Error("Image trop longue à charger"))),15000);
+      probe.onload = () => finish(() => resolve(url));
+      probe.onerror = () => finish(() => reject(new Error("Image indisponible")));
+      probe.src = url;
+    });
+  }
+
+  function rememberOriginalImage(url) {
+    const parsed = new URL(url,window.location.origin);
+    const path = libraryFilePath(parsed.href);
+    if (!path || path.endsWith(".preview")) return;
+    if (nativeOriginalImages.get(path)?.url !== parsed.href) libraryRevision++;
+    nativeOriginalImages.set(path,{url:parsed.href,expires:Date.now()+120000});
+    if (nativeOriginalImages.size > 300) nativeOriginalImages.delete(nativeOriginalImages.keys().next().value);
+  }
+
+  function captureNativeOriginalImages() {
+    document.querySelectorAll('app-file-preview-dialog img[src*="/MyPhone/downloadChatFile/"]')
+      .forEach(image => { if (image.complete && image.naturalWidth) rememberOriginalImage(image.src); });
+  }
+
+  async function loadOriginalImagePreview(image) {
     const originalUrl = image.dataset.decOriginalPreviewUrl || "";
     if (!originalUrl || image.dataset.decOriginalPreviewState === "loading") {
       return;
     }
 
     image.dataset.decOriginalPreviewState = "loading";
-    const probe = new Image();
-    probe.decoding = "async";
-    probe.onload = () => {
+    try {
+      const url = new URL(originalUrl);
+      const native = nativeOriginalImages.get(url.pathname);
+      let resolved;
+      if (native?.expires > Date.now()) {
+        try { resolved = await probeOriginalImage(native.url); } catch { nativeOriginalImages.delete(url.pathname); }
+      }
+      if (!resolved && url.searchParams.has("sessionId")) {
+        try { resolved = await probeOriginalImage(url.href); } catch { /* Interface récente : essayer un ticket. */ }
+      }
+      if (!resolved) {
+        url.search = "";
+        url.searchParams.set("ticket",await originalDownloadTicket());
+        resolved = await probeOriginalImage(url.href);
+      }
       if (image.isConnected && image.dataset.decOriginalPreviewUrl === originalUrl) {
         image.srcset = "";
-        image.src = originalUrl;
+        image.src = resolved;
         image.dataset.decOriginalPreviewState = "ready";
+        delete image.dataset.decOriginalPreviewRetryAfter;
+        rememberOriginalImage(resolved);
+        scheduleUpdate();
       }
-    };
-    probe.onerror = () => {
+    } catch {
       if (image.dataset.decOriginalPreviewUrl === originalUrl) {
         image.dataset.decOriginalPreviewState = "failed";
+        image.dataset.decOriginalPreviewRetryAfter = String(Date.now()+60000);
       }
-    };
-    probe.src = originalUrl;
+    }
   }
 
   function ensureOriginalPreviewObserver() {
@@ -3816,10 +4410,8 @@
   }
 
   function enhanceOriginalImagePreviews() {
+    captureNativeOriginalImages();
     const sessionId = currentChatSessionId();
-    if (!sessionId) {
-      return;
-    }
 
     const previewObserver = ensureOriginalPreviewObserver();
     document
@@ -3839,9 +4431,9 @@
         }
 
         if (
-          image.dataset.decOriginalPreviewState === "ready" ||
           image.dataset.decOriginalPreviewState === "loading" ||
-          image.dataset.decOriginalPreviewState === "failed"
+          (image.dataset.decOriginalPreviewState === "failed" &&
+            Number(image.dataset.decOriginalPreviewRetryAfter) > Date.now())
         ) {
           return;
         }
@@ -4140,6 +4732,12 @@
     enhanceReadReceipts();
     enhanceTypingIndicator(profiles);
     enhanceCustomEmojis();
+    enhanceMessageLibrary(messages.map(message => ({
+      message,
+      own: Boolean(message.querySelector(".message-inner.message-right")),
+      profile: directConversationProfileFromHeader(),
+      time: message.querySelector(".message-title-time, .message-time-info small, small[title]"),
+    })));
     enhanceOriginalImagePreviews();
     initialMessageScan = false;
   }
@@ -4335,6 +4933,7 @@
     });
     enhanceModernReceipts(records, contact);
     enhanceCustomEmojis();
+    enhanceMessageLibrary(records);
     enhanceOriginalImagePreviews();
     // Un groupe doit fournir des participants avant d'identifier qui écrit.
     if (contact || document.querySelector(PARTICIPANT_SELECTOR)) {
