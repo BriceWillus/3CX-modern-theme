@@ -8,7 +8,7 @@ Un thème pour le client web **3CX**, avec une présentation inspirée de Slack 
 - Propose un thème clair ou sombre, une couleur personnalisable et un alignement des messages au choix.
 - Remplace le dernier indicateur de lecture par le portrait de l’interlocuteur dans les discussions individuelles.
 - Préserve la transparence des aperçus PNG, WebP et GIF.
-- Ajoute des **favoris avec épingles et notes personnelles**, ainsi qu’une **galerie des images et documents de la conversation ouverte**.
+- Ajoute des **favoris avec épingles et notes personnelles**, ainsi qu’une **galerie des images, documents et liens de la conversation ouverte**.
 - Ajoute des emojis et sons de notification personnalisés, avec un panneau de réglages repliable.
 
 ## Installation
@@ -29,6 +29,8 @@ Le petit panneau en haut donne accès aux réglages, aux favoris et à la galeri
 Survole un message pour afficher son épingle. Dans les favoris, le bouton **note** ajoute une note personnelle ; clique sur une note existante pour la modifier. Cliquer sur le contenu d’une carte, dans les favoris ou la galerie, te ramène au message d’origine.
 
 Les favoris et notes sont enregistrés **dans ce navigateur, pour le compte connecté**. La galerie se complète à mesure que tu remontes l’historique de la conversation.
+
+Dans la galerie, les filtres **Tout**, **Images**, **Documents** et **Liens** permettent de retrouver le contenu partagé, avec une recherche par nom, URL ou auteur.
 
 ## Mises à jour
 
