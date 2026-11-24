@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.11
+// @version      2.0.0-beta.12
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @match        https://decindustrie.3cx.no:5001/*
@@ -35,11 +35,14 @@
   const TYPING_INDICATOR_ID = "dec-slack-typing-indicator";
   const HIDDEN_NATIVE_TYPING_CLASS = "dec-slack-native-typing-hidden";
   const CONTROLS_ID = "dec-slack-controls";
+  const CONTROLS_CONTENT_ID = "dec-slack-controls-content";
+  const FREE_EDITION_BANNER_CLASS = "dec-slack-free-edition-hidden";
   const STORAGE_LAYOUT = "decSlackLayout";
   const STORAGE_THEME = "decSlackTheme";
   const STORAGE_ACCENT = "decSlackAccent";
   const STORAGE_EMOJI_MANIFEST = "decSlackEmojiManifest";
   const STORAGE_SEARCH_COLLAPSED = "decSlackSearchCollapsed";
+  const STORAGE_CONTROLS_COLLAPSED = "decSlackControlsCollapsed";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_NOTIFICATION_SOUND_ID = "decSlackNotificationSoundId";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
@@ -174,6 +177,7 @@
     theme: readSetting(STORAGE_THEME, "dark") === "light" ? "light" : "dark",
     accent: normalizeHex(readSetting(STORAGE_ACCENT, "#4a154b")),
     searchCollapsed: readSetting(STORAGE_SEARCH_COLLAPSED, "false") === "true",
+    controlsCollapsed: readSetting(STORAGE_CONTROLS_COLLAPSED, "false") === "true",
     notificationSound: readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
     notificationSoundId: readSetting(STORAGE_NOTIFICATION_SOUND_ID, ""),
   };
@@ -205,6 +209,7 @@
   function controlElements(controls) {
     return Object.fromEntries(
       [
+        ["toggleButton", "toggle"],
         ["layoutButton", "layout"],
         ["themeButton", "theme"],
         ["searchButton", "search"],
@@ -225,8 +230,27 @@
       return;
     }
 
-    const { layoutButton, themeButton, searchButton, soundButton, colorInput } =
+    const { toggleButton, layoutButton, themeButton, searchButton, soundButton, colorInput } =
       controlElements(controls);
+
+    const content = document.getElementById(CONTROLS_CONTENT_ID);
+    const collapsed = preferences.controlsCollapsed;
+    controls.dataset.collapsed = String(collapsed);
+    if (content) {
+      content.hidden = collapsed;
+    }
+    if (toggleButton) {
+      toggleButton.textContent = collapsed ? "›" : "‹";
+      toggleButton.title = collapsed ? "Déplier le panneau de réglages" : "Replier le panneau de réglages";
+      toggleButton.setAttribute("aria-label", toggleButton.title);
+      toggleButton.setAttribute("aria-expanded", String(!collapsed));
+      if (collapsed && content?.contains(document.activeElement)) {
+        toggleButton.focus();
+      }
+    }
+    if (collapsed) {
+      closeNotificationSoundMenu();
+    }
 
     const splitLayout = preferences.layout === "split";
     const lightTheme = preferences.theme === "light";
@@ -366,6 +390,15 @@
     controls.innerHTML = `
       <button
         type="button"
+        class="dec-slack-control-button dec-slack-controls-toggle"
+        data-dec-control="toggle"
+        aria-controls="${CONTROLS_CONTENT_ID}"
+        aria-expanded="true"
+        aria-label="Replier le panneau de réglages"
+      ></button>
+      <div id="${CONTROLS_CONTENT_ID}" class="dec-slack-controls-content">
+      <button
+        type="button"
         class="dec-slack-control-button dec-slack-layout-button"
         data-dec-control="layout"
         aria-label="Changer l'alignement des messages"
@@ -410,10 +443,17 @@
           aria-label="Choisir la couleur du thème"
         >
       </label>
+      </div>
     `;
 
-    const { layoutButton, themeButton, searchButton, soundButton, colorInput } =
+    const { toggleButton, layoutButton, themeButton, searchButton, soundButton, colorInput } =
       controlElements(controls);
+
+    toggleButton.addEventListener("click", () => {
+      preferences.controlsCollapsed = !preferences.controlsCollapsed;
+      writeSetting(STORAGE_CONTROLS_COLLAPSED, String(preferences.controlsCollapsed));
+      applyPreferences();
+    });
 
     layoutButton.addEventListener("click", () => {
       preferences.layout = preferences.layout === "split" ? "left" : "split";
@@ -506,6 +546,16 @@
   ];
   const profileCache = new Map();
 
+  function hideFreeEditionBanner() {
+    document.querySelectorAll("app-edition-banner").forEach((banner) => {
+      const text = String(banner.textContent || "").replace(/\s+/g, " ").trim();
+      banner.classList.toggle(
+        FREE_EDITION_BANNER_CLASS,
+        /édition amateur gratuite|votre système fonctionne en mode gratuit/i.test(text),
+      );
+    });
+  }
+
   function installAvatarStyles() {
     if (document.getElementById(STYLE_ID)) {
       return;
@@ -514,6 +564,25 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+      app-edition-banner.${FREE_EDITION_BANNER_CLASS} {
+        display: none !important;
+      }
+
+      #${CONTROLS_CONTENT_ID} {
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+      }
+
+      #${CONTROLS_CONTENT_ID}[hidden] {
+        display: none !important;
+      }
+
+      #${CONTROLS_ID} .dec-slack-controls-toggle {
+        flex: 0 0 28px !important;
+        font-size: 20px !important;
+      }
+
       chat-message .message-inner:has(> .${AVATAR_CLASS})::before {
         content: none !important;
         display: none !important;
@@ -3783,6 +3852,7 @@
 
   function enhanceVisibleMessages() {
     installAvatarStyles();
+    hideFreeEditionBanner();
     ensureControls();
     const modern = Boolean(document.querySelector("chat-component app-layout-type4"));
     document.documentElement.classList.toggle("dec-slack-ui-v2", modern);
