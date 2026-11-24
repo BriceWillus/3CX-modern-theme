@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.16
+// @version      2.0.0-beta.17
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -3814,6 +3814,62 @@
     return [...attachments.values()];
   }
 
+  function libraryLink(value, label = "") {
+    if (typeof value !== "string") return null;
+    let candidate = value.trim();
+    if (/^www\./i.test(candidate)) candidate = `https://${candidate}`;
+    else if (candidate.startsWith("//")) candidate = `${window.location.protocol}${candidate}`;
+    if (!/^https?:\/\//i.test(candidate)) return null;
+    try {
+      const url = new URL(candidate);
+      if (!["http:","https:"].includes(url.protocol) || !url.hostname || libraryFilePath(url.href)) return null;
+      return {url:url.href,label:String(label || "").trim().slice(0,500),host:url.host};
+    } catch { return null; }
+  }
+
+  function libraryTextLinks(text) {
+    const links = new Map();
+    const value = String(text || "");
+    for (const match of value.matchAll(/(?:https?:\/\/|www\.)[^\s<>"'`]+/gi)) {
+      if (match.index && /[\p{L}\p{N}_@]/u.test(value[match.index-1])) continue;
+      let candidate = match[0];
+      let previous;
+      do {
+        previous = candidate;
+        candidate = candidate.replace(/[.,;:!?…»”’]+$/u,"");
+        for (const [open,close] of [["(",")"],["[","]"],["{","}"]]) {
+          if (candidate.endsWith(close) && candidate.split(close).length > candidate.split(open).length) {
+            candidate = candidate.slice(0,-1);
+          }
+        }
+      } while (candidate !== previous);
+      const link = libraryLink(candidate);
+      if (link) links.set(link.url,link);
+      if (links.size >= 50) break;
+    }
+    return [...links.values()];
+  }
+
+  function libraryLinks(message) {
+    const source = message.querySelector("app-chat-message-text, .message-text-internal");
+    if (!source) return [];
+    const links = new Map();
+    source.querySelectorAll("a[href]").forEach(anchor => {
+      if (anchor.closest('[data-dec-created="true"]') || links.size >= 50) return;
+      const link = libraryLink(anchor.getAttribute("href"),anchor.textContent);
+      if (link && !links.has(link.url)) links.set(link.url,link);
+    });
+    // Le texte des ancres est déjà traité : ne pas ajouter une URL différente
+    // simplement parce que le libellé visible diffère de leur destination.
+    const copy = source.cloneNode(true);
+    copy.querySelectorAll('a, [data-dec-created="true"]').forEach(element => element.replaceWith(document.createTextNode(" ")));
+    for (const link of libraryTextLinks(copy.textContent)) {
+      if (!links.has(link.url)) links.set(link.url,link);
+      if (links.size >= 50) break;
+    }
+    return [...links.values()];
+  }
+
   function libraryDay(value, now = new Date()) {
     const text = String(value || "").trim().toLocaleLowerCase("fr-FR");
     const explicit = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -3855,9 +3911,10 @@
       return Array.isArray(entries) ? entries.filter(entry => entry && typeof entry.id === "string" &&
         /^\d+$/.test(entry.chatId) && Array.isArray(entry.attachments)).slice(0,500).map(entry => ({
           ...entry,
-          // Les URL authentifiées ne sont jamais relues du stockage.
+          // Les liens de téléchargement authentifiés ne sont jamais relus du stockage.
           attachments: entry.attachments.map(file => ({ ...file, id: /^document:[a-z0-9]+$/.test(file.id) ? file.id : libraryFilePath(file.id),
             previewPath: libraryFilePath(file.previewPath) })).filter(file => file.id),
+          links: Array.isArray(entry.links) ? entry.links.map(link => libraryLink(link?.url,link?.label)).filter(Boolean) : [],
         })) : [];
     } catch { return []; }
   }
@@ -4046,6 +4103,8 @@
         #${LIBRARY_PANEL_ID} .dec-library-card img { display:block; max-width:100%; max-height:180px; object-fit:contain; margin:auto; background:transparent!important; border-radius:5px; }
         #${LIBRARY_PANEL_ID} .dec-library-file { display:block; width:100%; text-align:left; margin:6px 0; }
         #${LIBRARY_PANEL_ID} .dec-library-file span { display:block; margin-top:5px; }
+        #${LIBRARY_PANEL_ID} .dec-library-link span { margin-top:0; color:var(--slack-blue,#79b8ff); font-weight:600; }
+        #${LIBRARY_PANEL_ID} .dec-library-link small { display:block; margin-top:4px; color:var(--slack-muted,#b8b5bc); font-size:12px; overflow-wrap:anywhere; }
         #${LIBRARY_PANEL_ID} .dec-library-card textarea { min-height:52px; max-height:180px; resize:vertical; margin:6px 0; font-size:13px; }
         #${LIBRARY_PANEL_ID} .dec-library-note { margin-top:6px; }
         #${LIBRARY_PANEL_ID} .dec-library-note-toggle { border:0; background:transparent; padding:3px 0; font-size:12px; }
@@ -4140,7 +4199,7 @@
     panel.dataset.signature = signature;
     const favorites = libraryOpenTab === "favorites";
     panel.querySelector("h2").textContent = favorites ? "Favoris" : "Galerie";
-    panel.querySelector("input").placeholder = favorites ? "Rechercher dans les favoris…" : "Nom du fichier ou auteur…";
+    panel.querySelector("input").placeholder = favorites ? "Rechercher dans les favoris…" : "Nom, lien ou auteur…";
     const filters = panel.querySelector(".dec-library-filters");
     filters.replaceChildren();
     if (favorites) {
@@ -4149,7 +4208,7 @@
         button.setAttribute("aria-pressed",String(libraryAllChats === all)); filters.appendChild(button);
       }
     } else {
-      for (const [kind,label] of [["all","Tout"],["image","Images"],["document","Documents"]]) {
+      for (const [kind,label] of [["all","Tout"],["image","Images"],["document","Documents"],["link","Liens"]]) {
         const button = libraryButton(label, () => { libraryFilter = kind; renderMessageLibrary(true); });
         button.setAttribute("aria-pressed",String(libraryFilter === kind)); filters.appendChild(button);
       }
@@ -4159,15 +4218,17 @@
     const scrollTop = list.scrollTop;
     list.replaceChildren();
     let entries = favorites ? libraryFavorites.filter(entry => libraryAllChats || entry.chatId === chat?.id) :
-      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.chatId === chat?.id && entry.attachments.length);
+      [...(libraryConversations.get(chat?.id)?.values() || [])].filter(entry => entry.chatId === chat?.id && (entry.attachments.length || entry.links?.length));
     entries = entries.filter(entry => !query || [entry.text,entry.author,entry.chatTitle,entry.note,
-      ...entry.attachments.map(file => file.name)].join(" ").toLocaleLowerCase("fr-FR").includes(query));
+      ...entry.attachments.map(file => file.name), ...(entry.links || []).flatMap(link => [link.url,link.label,link.host])]
+      .join(" ").toLocaleLowerCase("fr-FR").includes(query));
     entries.sort((a,b) => favorites ? b.savedAt-a.savedAt : `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
     let count = 0;
     for (const entry of entries) {
       const files = favorites ? entry.attachments : entry.attachments.filter(file => libraryFilter === "all" || file.kind === libraryFilter);
-      if (!favorites && !files.length) continue;
-      count += favorites ? 1 : files.length;
+      const links = favorites || libraryFilter === "all" || libraryFilter === "link" ? entry.links || [] : [];
+      if (!favorites && !files.length && !links.length) continue;
+      count += favorites ? 1 : files.length+links.length;
       const card = libraryElement("article","dec-library-card");
       card.dataset.entryId = entry.id;
       const meta = libraryElement("div","dec-library-meta");
@@ -4180,7 +4241,8 @@
       pin.setAttribute("aria-pressed",String(pinned));
       meta.appendChild(pin);
       card.appendChild(meta);
-      if (entry.text) {
+      const onlyLinkText = links.length === 1 && (libraryLink(entry.text)?.url === links[0].url || entry.text === links[0].label);
+      if (entry.text && !onlyLinkText) {
         const message = libraryButton(entry.text, () => jumpToLibraryMessage(entry), "dec-library-text");
         message.title = "Retrouver ce message dans la conversation";
         card.appendChild(message);
@@ -4208,14 +4270,23 @@
         }
         button.appendChild(libraryElement("span","",file.name)); card.appendChild(button);
       }
+      for (const link of links) {
+        const button = libraryButton("", () => jumpToLibraryMessage(entry), "dec-library-file dec-library-link");
+        button.setAttribute("aria-label",`Retrouver le lien ${link.url} dans la conversation`);
+        button.title = "Retrouver le message contenant ce lien";
+        const label = link.label && libraryLink(link.label)?.url !== link.url ? link.label : link.host;
+        button.append(libraryElement("span","",label),libraryElement("small","",link.url));
+        card.appendChild(button);
+      }
       if (favorites) card.appendChild(libraryNoteControl(entry));
       list.appendChild(card);
     }
-    if (!count) list.appendChild(libraryElement("p","dec-library-empty",!favorites && waitingForChat ? "Chargement des pièces jointes…" : query ? "Aucun résultat." :
-      favorites ? "Épingle un message à l’aide du bouton qui apparaît à son survol." : "Aucune pièce jointe chargée pour ce filtre."));
+    if (!count) list.appendChild(libraryElement("p","dec-library-empty",!favorites && waitingForChat ? "Chargement du contenu…" : query ? "Aucun résultat." :
+      favorites ? "Épingle un message à l’aide du bouton qui apparaît à son survol." : "Aucun élément chargé pour ce filtre."));
+    const kindLabel = {image:"image",document:"document",link:"lien"}[libraryFilter] || "élément";
     panel.querySelector(".dec-library-summary").textContent = !favorites && waitingForChat ? "Chargement de la conversation…" : favorites ?
       `${count} favori${count>1?"s":""} · Enregistrés dans ce navigateur pour ton compte.` :
-      `${count} pièce${count>1?"s":""} jointe${count>1?"s":""} · ${chat?.title || "Ouvre une conversation"}. Remonte le fil pour compléter la galerie.`;
+      `${count} ${kindLabel}${count>1?"s":""} · ${chat?.title || "Ouvre une conversation"}. Remonte le fil pour compléter la galerie.`;
     list.scrollTop = scrollTop;
   }
 
@@ -4240,15 +4311,16 @@
       if (chat.scope && !chat.scope.contains(message)) continue;
       if (chat.scope?.matches("app-chat-messages") && message.closest("app-chat-messages") !== chat.scope) continue;
       const attachments = libraryAttachments(message);
+      const links = libraryLinks(message);
       const text = libraryMessageText(message);
-      if (!text && !attachments.length) continue;
+      if (!text && !attachments.length && !links.length) continue;
       const day = time?.getAttribute("title") || message.querySelector(".new-day-title")?.textContent || "";
       const date = libraryDay(day);
       const clock = time?.textContent.trim() || "";
       // Ne pas utiliser le profil reconstruit depuis l'en-tête : il peut déjà
       // correspondre à B tandis que ces nœuds Angular contiennent encore A.
       const nativeSender = message.querySelector(".sender-name, .message-name")?.textContent.trim() || "";
-      const nativeFingerprint = JSON.stringify([own,nativeSender,date,clock,text,attachments.map(file=>file.id)]);
+      const nativeFingerprint = JSON.stringify([own,nativeSender,date,clock,text,attachments.map(file=>file.id),links.map(link=>link.url)]);
       const owner = libraryMessageOwners.get(message);
       if (owner && (owner.chatId !== chat.id || owner.account !== account) &&
           owner.fingerprint === nativeFingerprint) {
@@ -4264,9 +4336,9 @@
       const ordinal = duplicates.get(fingerprint) || 0;
       duplicates.set(fingerprint,ordinal+1);
       const id = `${chat.id}:${libraryHash(fingerprint)}:${ordinal}`;
-      const entry = {id,chatId:chat.id,chatTitle:chat.title,author,authorKey,date,time:clock,text,attachments};
+      const entry = {id,chatId:chat.id,chatTitle:chat.title,author,authorKey,date,time:clock,text,attachments,links};
       libraryMessages.set(id,{message,entry});
-      if (attachments.length && JSON.stringify(gallery.get(id)) !== JSON.stringify(entry)) {
+      if ((attachments.length || links.length) && JSON.stringify(gallery.get(id)) !== JSON.stringify(entry)) {
         gallery.set(id,entry); libraryRevision++;
       }
       // Une limite de métadonnées borne les longues sessions sans précharger les fichiers.
