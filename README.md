@@ -11,6 +11,8 @@ Un thème pour le client web **3CX**, avec une présentation inspirée de Slack 
 - Prépare les **avatars GIF animés** : image fixe pour les clients classiques, animation pour les utilisateurs du thème, si le serveur conserve les données du GIF.
 - Ajoute des **favoris avec épingles et notes personnelles**, ainsi qu’une **galerie des images, documents et liens de la conversation ouverte**.
 - Ajoute des emojis et sons de notification personnalisés, avec un panneau de réglages repliable.
+- Alerte pour les nouveaux messages de la conversation ouverte lorsque 3CX n'a pas le focus, avec le son choisi et une notification du navigateur si elle est autorisée.
+- Affiche les indicateurs de saisie dans les discussions individuelles et les groupes, même avec le panneau des participants fermé.
 
 ## Installation
 
@@ -34,6 +36,14 @@ Les favoris et notes sont enregistrés **dans ce navigateur, pour le compte conn
 Dans la galerie, les filtres **Tout**, **Images**, **Documents** et **Liens** permettent de retrouver le contenu partagé, avec une recherche par nom, URL ou auteur.
 
 Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet aussi d’afficher les chemins réseau Windows (UNC), y compris les dossiers avec des espaces. Ce choix est mémorisé dans le navigateur. Un clic sur un chemin ramène au message d’origine.
+
+## Notifications et saisie
+
+Dans le menu **cloche**, choisis le son et active si besoin **Notification du navigateur**. Le navigateur demande son autorisation uniquement après un clic sur ce réglage. Si les notifications du site 3CX sont déjà autorisées, aucune nouvelle autorisation n'est nécessaire.
+
+Pour la **conversation ouverte**, un nouveau message reçu déclenche l'alerte quand tu consultes un autre onglet ou une autre fenêtre. Lorsque tu regardes 3CX, ce message ne déclenche ni son ni notification supplémentaire. Tes propres envois et le chargement de l'historique restent silencieux. Un clic sur la notification ramène à la conversation correspondante. Le choix **Silencieux** coupe le son du thème sans désactiver les alertes visuelles du navigateur.
+
+Dans les groupes, les portraits ou initiales des personnes en train d'écrire accompagnent les points animés. Le thème utilise les identités indiquées par 3CX ; si aucun nom n'est fourni, seuls les points apparaissent. Il ne remplace pas un prénom ambigu par le portrait d'un autre contact.
 
 ## Photo de profil animée
 

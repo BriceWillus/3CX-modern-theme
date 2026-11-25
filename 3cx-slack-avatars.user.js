@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.21
+// @version      2.0.0-beta.22
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -69,6 +69,7 @@
   const STORAGE_LAST_SCRIPT_VERSION = "decSlackLastScriptVersion";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_NOTIFICATION_SOUND_ID = "decSlackNotificationSoundId";
+  const STORAGE_ACTIVE_CHAT_DESKTOP = "decSlackActiveChatDesktopNotifications";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
   const STORAGE_OWN_PROFILE = "decSlackOwnProfile";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
@@ -147,7 +148,10 @@
   let notificationAudioContext = null;
   let notificationAudioBuffer = null;
   let notificationAudioBufferUrl = "";
-  let lastNotificationAt = 0;
+  let lastNotificationAt = -Infinity;
+  let activeChatNotificationObserver = null;
+  let activeChatNotificationState = null;
+  const activeChatDesktopNotices = new Map();
   let cachedChatSessionId = (() => {
     try {
       return window.sessionStorage.getItem(STORAGE_CHAT_SESSION_ID) || "";
@@ -252,6 +256,7 @@
     controlsCollapsed: readSetting(STORAGE_CONTROLS_COLLAPSED, "false") === "true",
     notificationSound: readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
     notificationSoundId: readSetting(STORAGE_NOTIFICATION_SOUND_ID, ""),
+    activeChatDesktop: readSetting(STORAGE_ACTIVE_CHAT_DESKTOP, "true") !== "false",
   };
 
   function applyAccentVariables() {
@@ -408,13 +413,18 @@
         detail: definition.filename || "Son personnalisé",
       })),
     ];
-    const menuSignature = JSON.stringify(
+    const desktopPermission = browserNotificationPermission();
+    const menuSignature = JSON.stringify([
       options.map(({ id, label, detail }) => [id, label, detail, id === selectedId]),
-    );
+      desktopPermission, preferences.activeChatDesktop,
+    ]);
     if (menu.dataset.decSoundMenuSignature === menuSignature) {
       return;
     }
     const fragment = document.createDocumentFragment();
+    const sounds = document.createElement("div");
+    sounds.setAttribute("role", "listbox");
+    sounds.setAttribute("aria-label", "Sons de notification");
 
     options.forEach((option) => {
       const selected = option.id === selectedId;
@@ -442,8 +452,42 @@
         selectNotificationSound(option.id, { persist: true, preview: true });
         closeNotificationSoundMenu({ restoreFocus: true });
       });
-      fragment.appendChild(button);
+      sounds.appendChild(button);
     });
+    fragment.appendChild(sounds);
+
+    const desktop = document.createElement("button");
+    const desktopEnabled = desktopPermission === "granted" && preferences.activeChatDesktop;
+    desktop.type = "button";
+    desktop.className = "dec-slack-sound-option dec-slack-desktop-switch";
+    desktop.dataset.active = String(desktopEnabled);
+    desktop.setAttribute("role", "switch");
+    desktop.setAttribute("aria-label", "Notifications du navigateur pour la conversation ouverte");
+    desktop.setAttribute("aria-checked", String(desktopEnabled));
+    desktop.disabled = ["denied", "unsupported"].includes(desktopPermission);
+    desktop.style.borderTop = "1px solid var(--slack-line,#56525b)";
+    desktop.style.marginTop = "5px";
+    const check = document.createElement("span");
+    check.className = "dec-slack-sound-option-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = desktopEnabled ? "✓" : "";
+    const label = document.createElement("span");
+    label.className = "dec-slack-sound-option-label";
+    label.textContent = desktopPermission === "default" ? "Autoriser les notifications" : "Notification du navigateur";
+    const detail = document.createElement("small");
+    detail.textContent = desktopPermission === "denied" ? "Bloquées dans les réglages du site" :
+      desktopPermission === "unsupported" ? "Indisponibles dans ce navigateur" : "Conversation ouverte, hors focus uniquement";
+    desktop.append(check, label, detail);
+    desktop.addEventListener("click", async () => {
+      if (browserNotificationPermission() === "granted") preferences.activeChatDesktop = !preferences.activeChatDesktop;
+      else {
+        try { preferences.activeChatDesktop = await window.Notification.requestPermission() === "granted"; }
+        catch { preferences.activeChatDesktop = false; }
+      }
+      writeSetting(STORAGE_ACTIVE_CHAT_DESKTOP, String(preferences.activeChatDesktop));
+      renderNotificationSoundMenu();
+    });
+    fragment.appendChild(desktop);
 
     menu.dataset.decSoundMenuSignature = menuSignature;
     menu.replaceChildren(fragment);
@@ -492,15 +536,15 @@
           type="button"
           class="dec-slack-control-button"
           data-dec-control="sound"
-          aria-haspopup="listbox"
+          aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="${NOTIFICATION_SOUND_MENU_ID}"
         ></button>
         <div
           id="${NOTIFICATION_SOUND_MENU_ID}"
           class="dec-slack-sound-menu"
-          role="listbox"
-          aria-label="Sons de notification"
+          role="dialog"
+          aria-label="Notifications"
           hidden
         ></div>
       </div>
@@ -576,7 +620,7 @@
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
       }
-      const options = [...notificationSoundMenu().querySelectorAll(".dec-slack-sound-option")];
+      const options = [...notificationSoundMenu().querySelectorAll(".dec-slack-sound-option")].filter(option => !option.disabled);
       if (options.length === 0) {
         return;
       }
@@ -1461,8 +1505,8 @@
     return currentLoadPromise;
   }
 
-  function playCustomNotification({ preview = false } = {}) {
-    if (!preferences.notificationSound || !customNotificationSound) {
+  function playCustomNotification({ preview = false, onlyWhenAway = false } = {}) {
+    if (!preferences.notificationSound || !customNotificationSound || (onlyWhenAway && notificationPageHasFocus())) {
       return;
     }
 
@@ -1483,7 +1527,8 @@
       : Promise.resolve();
 
     void prepareNotificationAudio().then((audio) => {
-      if (!preferences.notificationSound || customNotificationSound?.url !== requestedSound.url) {
+      if (!preferences.notificationSound || customNotificationSound?.url !== requestedSound.url ||
+          (onlyWhenAway && notificationPageHasFocus())) {
         return;
       }
 
@@ -1505,7 +1550,8 @@
         void resumeContext.then(() => {
           if (
             !preferences.notificationSound ||
-            customNotificationSound?.url !== requestedSound.url
+            customNotificationSound?.url !== requestedSound.url ||
+            (onlyWhenAway && notificationPageHasFocus())
           ) {
             return;
           }
@@ -3467,6 +3513,8 @@
     const matches = [...candidates].filter(
       (element) =>
         !element.closest(`#${TYPING_INDICATOR_ID}`) &&
+        !element.closest('[data-dec-created="true"], [data-qa="chat-name"], [data-qa="header-name"], .header-name') &&
+        !element.querySelector('[data-qa="chat-name"], [data-qa="header-name"], .header-name') &&
         !element.querySelector("chat-message, #chat-form-controls, app-chat-message-input") &&
         containsTypingText(nativeTypingElementText(element)),
     );
@@ -3542,6 +3590,23 @@
 
     const combinedText = normalizedTypingText(elements.map(nativeTypingElementText).join(" "));
     const candidates = typingProfileCandidates(profiles);
+    // Le nom transmis par 3CX reste exploitable lorsque le panneau des
+    // participants est fermé et que la personne n'est pas encore en cache.
+    for (const name of namesFromTypingElements(elements)) {
+      const extension = extensionFromText(name);
+      const cleanName = extension ? name.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim() : name;
+      if ((extension && extension === currentOwnProfile?.extension) ||
+          normalizedTypingText(cleanName) === normalizedTypingText(currentOwnProfile?.name)) continue;
+      if (extension && candidates.some(profile => profile.extension === extension)) continue;
+      const normalizedName = normalizedTypingText(cleanName);
+      const named = candidates.filter(profile => normalizedTypingText(profile.name) === normalizedName ||
+        normalizedTypingText(profile.name).startsWith(`${normalizedName} `));
+      if (!extension && named.length === 1) continue;
+      if (!cleanName) continue;
+      const known = extension ? profiles.get(extension) : null;
+      candidates.push({ extension:extension || `typing:${libraryHash(normalizedName)}`, name:known?.name || cleanName,
+        imageUrl:known?.imageUrl || "", initials:known?.initials || initialsFromName(cleanName) });
+    }
     const matchedExtensions = new Set();
 
     elements.forEach((element) => {
@@ -3566,7 +3631,10 @@
       const normalizedName = normalizedTypingText(profile.name);
       const firstName = normalizedName.split(" ")[0];
       const escapedExtension = String(profile.extension).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const fullNamePosition = normalizedName ? combinedText.indexOf(normalizedName) : -1;
+      const escapedName = normalizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const fullNamePosition = normalizedName ? combinedText.search(
+        new RegExp(`(?:^|[^\\p{L}])${escapedName}(?=[^\\p{L}]|$)`, "u"),
+      ) : -1;
       const uniqueFirstNamePosition =
         firstName && firstNameCounts.get(firstName) === 1
           ? combinedText.search(
@@ -3575,9 +3643,9 @@
               ),
             )
           : -1;
-      const extensionPosition = combinedText.search(
+      const extensionPosition = /^\d{1,5}$/.test(profile.extension) ? combinedText.search(
         new RegExp(`(?:^|\\D)${escapedExtension}(?:\\D|$)`),
-      );
+      ) : -1;
       const positions = [fullNamePosition, uniqueFirstNamePosition, extensionPosition].filter(
         (position) => position >= 0,
       );
@@ -3594,6 +3662,22 @@
           (matchPosition.get(left.extension) ?? Number.MAX_SAFE_INTEGER) -
           (matchPosition.get(right.extension) ?? Number.MAX_SAFE_INTEGER),
       );
+  }
+
+  function namesFromTypingElements(elements) {
+    const names = new Map();
+    for (const element of elements) {
+      const text = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("data-status")]
+        .find(value => containsTypingText(value));
+      const match = String(text || "").trim().match(/^(.*?)\s+(?:(?:is|are)\s+typing|typing|(?:est|sont)\s+en\s+train\s+d['’][eé]crire|en\s+train\s+d['’][eé]crire|[eé]crivent|[eé]crit|r[eé]digent|r[eé]dige)\s*[.…]*$/iu);
+      if (!match) continue;
+      for (const name of match[1].split(/\s*,\s*|\s+(?:et|and)\s+/iu)) {
+        const normalized = normalizedTypingText(name);
+        if (!normalized || /^(?:quelqu'un|un participant|une personne|plusieurs|someone|somebody|a participant|\d+\s+(?:personnes|participants|people|users))/.test(normalized)) continue;
+        names.set(normalized, name.trim());
+      }
+    }
+    return [...names.values()];
   }
 
   function ensureTypingIndicator() {
@@ -3701,7 +3785,14 @@
     });
 
     const typingProfiles = profilesFromTypingElements(elements, profiles);
-    if (elements.length === 0 || typingProfiles.length === 0) {
+    const nativeNames = namesFromTypingElements(elements);
+    const onlySelf = nativeNames.length > 0 && nativeNames.every(name => {
+      const extension = extensionFromText(name);
+      const cleanName = extension ? name.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim() : name;
+      return (extension && extension === currentOwnProfile?.extension) ||
+        normalizedTypingText(cleanName) === normalizedTypingText(currentOwnProfile?.name);
+    });
+    if (elements.length === 0 || onlySelf) {
       /* Même cache, ce nœud restait le dernier enfant de la liste. Certaines
          versions de 3CX en deduisaient que le dernier chat-message natif
          n'etait pas encore arrive en bas et conservaient le badge non lu. */
@@ -3741,7 +3832,8 @@
     }
 
     const names = typingProfiles.map((profile) => profile.name);
-    const label = names.length === 1 ? `${names[0]} écrit…` : `${names.join(", ")} écrivent…`;
+    const label = names.length === 0 ? "Un participant écrit…" :
+      names.length === 1 ? `${names[0]} écrit…` : `${names.join(", ")} écrivent…`;
     indicator.setAttribute("aria-label", label);
     indicator.hidden = false;
   }
@@ -5232,6 +5324,154 @@
       });
   }
 
+  function notificationPageHasFocus() {
+    return !document.hidden && document.hasFocus();
+  }
+
+  function browserNotificationPermission() {
+    try {
+      return typeof window.Notification === "function" ? window.Notification.permission : "unsupported";
+    } catch { return "unsupported"; }
+  }
+
+  function closeActiveChatDesktopNotices() {
+    for (const notice of activeChatDesktopNotices.values()) notice.close();
+    activeChatDesktopNotices.clear();
+  }
+
+  function showActiveChatDesktopNotification(state, record) {
+    if (!preferences.activeChatDesktop || notificationPageHasFocus() || browserNotificationPermission() !== "granted") return;
+    const tag = `dec-3cx-open-chat-${state.id}`;
+    try {
+      activeChatDesktopNotices.get(tag)?.close();
+      const notice = new window.Notification(`3CX · ${record.sender || state.title || "Nouveau message"}`, {
+        body:record.body.slice(0,240), tag, renotify:true, silent:true,
+        icon:new URL("/assets/manifest/icon_192x192.png", window.location.origin).href,
+      });
+      activeChatDesktopNotices.set(tag, notice);
+      notice.onclick = () => {
+        window.focus();
+        if (window.location.hash !== `#/chat/${state.id}`) window.location.hash = `/chat/${state.id}`;
+        notice.close();
+      };
+      notice.onclose = () => {
+        if (activeChatDesktopNotices.get(tag) === notice) activeChatDesktopNotices.delete(tag);
+      };
+    } catch {
+      // Une autorisation absente ou une API indisponible ne bloque pas le son.
+    }
+  }
+
+  function activeChatNotificationRecords(scope, title) {
+    const counts = new Map();
+    let sender = "";
+    const records = [];
+    for (const message of scope.querySelectorAll(MESSAGE_SELECTOR)) {
+      const align = message.querySelector(".message-inner, .message-align");
+      const time = message.querySelector(".message-data small, .message-title-time, .message-time-info small, small[title]");
+      if (!align || !time?.textContent.trim()) continue;
+      const own = align.classList.contains("message-right") || align.classList.contains("sent-by-me");
+      const nativeName = message.querySelector(".sender-name, .message-name")?.textContent.trim();
+      if (nativeName && !own) sender = nativeName;
+      const text = libraryMessageText(message);
+      const attachments = libraryAttachments(message);
+      const file = message.querySelector("app-chat-message-file, app-chat-message-file-preview, file-preview, preview-text-message");
+      const audio = message.querySelector("audio, app-chat-message-audio, app-chat-message-voice");
+      if (!text && !attachments.length && !file && !audio) continue;
+      const signature = libraryHash(JSON.stringify([own, libraryDay(time.getAttribute("title") || ""),
+        time.textContent.trim(), text, attachments.map(item => item.id), Boolean(file), Boolean(audio)]));
+      const ordinal = (counts.get(signature) || 0) + 1;
+      counts.set(signature, ordinal);
+      records.push({ message, own, signature, ordinal, key:`${signature}:${ordinal}`,
+        sender:own ? "Moi" : sender || title,
+        body:text || (audio ? "Message vocal reçu" : attachments[0]?.kind === "image" ? "Image reçue" : "Pièce jointe reçue") });
+    }
+    return { records, counts };
+  }
+
+  function scanActiveChatNotifications() {
+    const id = window.location.hash.match(/^#\/chat\/(\d+)(?:[/?]|$)/)?.[1];
+    const scope = document.querySelector("chat-component app-chat-messages, app-chat-messages");
+    if (!id || !scope) { activeChatNotificationState = null; return; }
+    const title = scope.querySelector('chat-messages-header [data-qa="chat-name"], #showParticipants')?.textContent.trim() || "";
+    const account = document.querySelector('app-header wc-account-menu app-avatar img[alt]:not(.dec-animated-avatar-image)')?.getAttribute("alt") || "";
+    let state = activeChatNotificationState;
+    if (!state || state.id !== id || state.scope !== scope || state.account !== account || state.title !== title) {
+      state = { id, scope, account, title, ready:false, tail:null, tailKeys:[], seen:new Map() };
+      activeChatNotificationState = state;
+    }
+    const { records, counts } = activeChatNotificationRecords(scope, title);
+    if (!records.length) return; // Angular peut vider le conteneur avant de le repeupler.
+    let start = records.length;
+    if (state.ready) {
+      const retained = records.findIndex(record => record.message === state.tail);
+      if (retained >= 0) start = retained + 1;
+      else if (state.tailKeys.length) {
+        // Recréation du DOM : retrouver la fin connue sans rejouer l'historique.
+        for (let index = 0; index <= records.length - state.tailKeys.length; index++) {
+          if (state.tailKeys.every((key, offset) => records[index + offset].key === key)) {
+            start = index + state.tailKeys.length;
+            break;
+          }
+        }
+      }
+    }
+    const incoming = records.slice(start).filter(record => !record.own &&
+      record.ordinal > (state.seen.get(record.signature) || 0));
+    for (const [key, count] of counts) state.seen.set(key, Math.max(count, state.seen.get(key) || 0));
+    while (state.seen.size > 2000) state.seen.delete(state.seen.keys().next().value);
+    state.ready = true;
+    state.tail = records[records.length - 1].message;
+    state.tailKeys = records.slice(-3).map(record => record.key);
+    if (!incoming.length || notificationPageHasFocus() || performance.now() < suppressAnimationsUntil) return;
+    playCustomNotification({ onlyWhenAway:true });
+    showActiveChatDesktopNotification(state, incoming[incoming.length - 1]);
+  }
+
+  function activeChatMutationNeedsScan(mutation) {
+    const element = mutationElement(mutation.target);
+    if (element?.closest?.(`${CHAT_TOAST_SELECTOR}, [data-dec-created="true"], #${CONTROLS_ID}`)) return false;
+    if (mutation.type === "childList") {
+      const changed = [...mutation.addedNodes, ...mutation.removedNodes];
+      if (changed.length && changed.every(isUserscriptOwnedNode)) return false;
+    }
+    if (element?.closest?.(MESSAGE_SELECTOR)) return true;
+    if (mutation.type !== "childList") return false;
+    return [...mutation.addedNodes, ...mutation.removedNodes].some(node => node.nodeType === Node.ELEMENT_NODE &&
+      !isUserscriptOwnedNode(node) && (node.matches(MESSAGE_SELECTOR) || node.querySelector(MESSAGE_SELECTOR)));
+  }
+
+  function initializeActiveChatNotifications() {
+    if (activeChatNotificationObserver) return;
+    scanActiveChatNotifications();
+    // MutationObserver reste utilisable quand requestAnimationFrame est suspendu
+    // dans un onglet masqué. Aucun rescan visuel ni minuterie ne conditionne l'alerte.
+    activeChatNotificationObserver = new MutationObserver(mutations => {
+      if (mutations.some(activeChatMutationNeedsScan)) scanActiveChatNotifications();
+    });
+    activeChatNotificationObserver.observe(document.documentElement, {
+      childList:true, characterData:true, attributes:true, attributeFilter:["src", "title"], subtree:true,
+    });
+    window.addEventListener("hashchange", () => { activeChatNotificationState = null; scanActiveChatNotifications(); });
+    const syncFocus = () => {
+      if (notificationPageHasFocus()) closeActiveChatDesktopNotices();
+      scanActiveChatNotifications();
+    };
+    window.addEventListener("focus", syncFocus);
+    window.addEventListener("blur", syncFocus);
+    document.addEventListener("visibilitychange", syncFocus);
+    // L'activation audio doit suivre une interaction réelle avec 3CX.
+    const activateAudio = () => {
+      if (!preferences.notificationSound || !customNotificationSound) return;
+      const context = ensureNotificationAudioContext();
+      if (context?.state === "suspended") void context.resume().catch(() => {});
+      void prepareNotificationAudio();
+    };
+    document.addEventListener("pointerdown", activateAudio, { passive:true, capture:true });
+    document.addEventListener("keydown", activateAudio, { passive:true, capture:true });
+    window.addEventListener("pagehide", closeActiveChatDesktopNotices);
+  }
+
   function chatToastSignature(toast) {
     const copy = toast.cloneNode(true);
     copy.querySelectorAll("button").forEach((button) => button.remove());
@@ -5720,10 +5960,7 @@
     enhanceCustomEmojis();
     enhanceMessageLibrary(records);
     enhanceOriginalImagePreviews();
-    // Un groupe doit fournir des participants avant d'identifier qui écrit.
-    if (contact || document.querySelector(PARTICIPANT_SELECTOR)) {
-      enhanceTypingIndicator(profiles);
-    } else removeTypingIndicator();
+    enhanceTypingIndicator(profiles);
     synchronizeModernScroll(records);
   }
 
@@ -5914,6 +6151,7 @@
   initializeCustomEmojis();
   initializeEmojiAutocomplete();
   initializeChatToastNotifications();
+  initializeActiveChatNotifications();
   initializeAnimatedAvatars();
 
   const observer = new MutationObserver((mutations) => {
