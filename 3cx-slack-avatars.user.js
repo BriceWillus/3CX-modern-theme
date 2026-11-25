@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.23
+// @version      2.0.0-beta.24
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -3664,89 +3664,63 @@
   }
 
   function profilesFromTypingElements(elements, profiles) {
-    if (elements.length === 0) {
-      return [];
-    }
-
+    if (elements.length === 0) return [];
     const directProfile = directConversationProfileFromHeader();
-    if (directProfile) {
-      return [directProfile];
-    }
+    if (directProfile) return [directProfile];
 
-    const combinedText = normalizedTypingText(elements.map(nativeTypingElementText).join(" "));
     const candidates = typingProfileCandidates(profiles);
-    // Le nom transmis par 3CX reste exploitable lorsque le panneau des
-    // participants est fermé et que la personne n'est pas encore en cache.
-    for (const name of namesFromTypingElements(elements)) {
-      const extension = extensionFromText(name);
-      const cleanName = extension ? name.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim() : name;
-      if ((extension && extension === currentOwnProfile?.extension) ||
-          normalizedTypingText(cleanName) === normalizedTypingText(currentOwnProfile?.name)) continue;
-      if (extension && candidates.some(profile => profile.extension === extension)) continue;
-      const normalizedName = normalizedTypingText(cleanName);
-      const named = candidates.filter(profile => normalizedTypingText(profile.name) === normalizedName ||
-        normalizedTypingText(profile.name).startsWith(`${normalizedName} `));
-      if (!extension && named.length === 1) continue;
-      if (!cleanName) continue;
-      const known = extension ? profiles.get(extension) : null;
-      candidates.push({ extension:extension || `typing:${libraryHash(normalizedName)}`, name:known?.name || cleanName,
-        imageUrl:known?.imageUrl || "", initials:known?.initials || initialsFromName(cleanName) });
-    }
-    const matchedExtensions = new Set();
-
-    elements.forEach((element) => {
-      element.querySelectorAll("app-avatar img[alt], img.avatar-content[alt]").forEach((image) => {
-        const extension = String(image.getAttribute("alt") || "").trim();
-        if (/^\d{1,5}$/.test(extension)) {
-          matchedExtensions.add(extension);
-        }
+    const names = namesFromTypingElements(elements);
+    const ownExtension = currentOwnProfile?.extension;
+    const ownName = normalizedTypingText(currentOwnProfile?.name);
+    const selected = new Map();
+    const byExtension = (extension) => candidates.find(profile => profile.extension === extension) || profiles.get(extension);
+    const nameWithoutExtension = (name, extension) => extension ? name.slice(0, -extension.length).trim() : name.trim();
+    const add = (profile, extension, fallbackName = "") => {
+      if (!extension || extension === ownExtension || selected.has(extension)) return;
+      const name = profile?.name || fallbackName || ("Participant " + extension);
+      selected.set(extension, {
+        ...profile, extension, name,
+        imageUrl:profile?.imageUrl || "",
+        initials:profile?.initials || initialsFromName(name),
       });
-    });
+    };
 
-    const firstNameCounts = new Map();
-    candidates.forEach((profile) => {
-      const firstName = normalizedTypingText(profile.name).split(" ")[0];
-      if (firstName) {
-        firstNameCounts.set(firstName, (firstNameCounts.get(firstName) || 0) + 1);
+    // Un identifiant porté par l'avatar natif est prioritaire sur les noms.
+    const nativeExtensions = [...new Set(elements.flatMap(element =>
+      [...element.querySelectorAll("app-avatar img[alt], img.avatar-content[alt]")]
+        .map(image => String(image.getAttribute("alt") || "").trim())
+        .filter(extension => /^\d{1,5}$/.test(extension)),
+    ))];
+    if (nativeExtensions.length) {
+      nativeExtensions.forEach(extension => {
+        const mention = names.find(name => extensionFromText(name) === extension) ||
+          (names.length === 1 && nativeExtensions.length === 1 ? names[0] : "");
+        add(byExtension(extension), extension, nameWithoutExtension(mention, extensionFromText(mention)));
+      });
+      return [...selected.values()];
+    }
+
+    // Résoudre chaque nom annoncé séparément. Une recherche de prénom dans
+    // toute la phrase confondait « Alice Martin » et « Martin Bernard ».
+    for (const name of names) {
+      const extension = extensionFromText(name);
+      const cleanName = nameWithoutExtension(name, extension);
+      if (extension) {
+        add(byExtension(extension), extension, cleanName);
+        continue;
       }
-    });
-
-    const matchPosition = new Map();
-    candidates.forEach((profile) => {
-      const normalizedName = normalizedTypingText(profile.name);
-      const firstName = normalizedName.split(" ")[0];
-      const escapedExtension = String(profile.extension).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const escapedName = normalizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const fullNamePosition = normalizedName ? combinedText.search(
-        new RegExp(`(?:^|[^\\p{L}])${escapedName}(?=[^\\p{L}]|$)`, "u"),
-      ) : -1;
-      const uniqueFirstNamePosition =
-        firstName && firstNameCounts.get(firstName) === 1
-          ? combinedText.search(
-              new RegExp(
-                `(?:^|[^a-z0-9])${firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^a-z0-9]|$)`,
-              ),
-            )
-          : -1;
-      const extensionPosition = /^\d{1,5}$/.test(profile.extension) ? combinedText.search(
-        new RegExp(`(?:^|\\D)${escapedExtension}(?:\\D|$)`),
-      ) : -1;
-      const positions = [fullNamePosition, uniqueFirstNamePosition, extensionPosition].filter(
-        (position) => position >= 0,
-      );
-      if (positions.length > 0) {
-        matchedExtensions.add(profile.extension);
-        matchPosition.set(profile.extension, Math.min(...positions));
+      const normalized = normalizedTypingText(cleanName);
+      if (!normalized || normalized === ownName) continue;
+      const exact = candidates.filter(profile => normalizedTypingText(profile.name) === normalized);
+      let match = exact.length === 1 ? exact[0] : null;
+      if (exact.length === 0) {
+        const prefix = candidates.filter(profile => normalizedTypingText(profile.name).startsWith(normalized + " "));
+        if (prefix.length === 1) match = prefix[0];
       }
-    });
-
-    return candidates
-      .filter((profile) => matchedExtensions.has(profile.extension))
-      .sort(
-        (left, right) =>
-          (matchPosition.get(left.extension) ?? Number.MAX_SAFE_INTEGER) -
-          (matchPosition.get(right.extension) ?? Number.MAX_SAFE_INTEGER),
-      );
+      if (match) add(match, match.extension);
+      else add(null, "typing:" + libraryHash(normalized), cleanName);
+    }
+    return [...selected.values()];
   }
 
   function namesFromTypingElements(elements) {
@@ -3754,7 +3728,7 @@
     for (const element of elements) {
       const text = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("data-status")]
         .find(value => containsTypingText(value));
-      const match = String(text || "").trim().match(/^(.*?)\s+(?:(?:is|are)\s+typing|typing|(?:est|sont)\s+en\s+train\s+d['’][eé]crire|en\s+train\s+d['’][eé]crire|[eé]crivent|[eé]crit|r[eé]digent|r[eé]dige)\s*[.…]*$/iu);
+      const match = String(text || "").trim().match(/^(.*?)\s+(?:(?:is|are)\s+typing|typing|(?:(?:est|sont)\s+)?(?:en\s+train\s+d['’][eé]crire|en\s+cours\s+d['’][eé]criture|r[eé]daction\s+en\s+cours)|[eé]crivent|[eé]crit|r[eé]digent|r[eé]dige)\s*[.…]*$/iu);
       if (!match) continue;
       for (const name of match[1].split(/\s*,\s*|\s+(?:et|and)\s+/iu)) {
         const normalized = normalizedTypingText(name);
@@ -3874,7 +3848,7 @@
     const onlySelf = nativeNames.length > 0 && nativeNames.every(name => {
       const extension = extensionFromText(name);
       const cleanName = extension ? name.replace(new RegExp(`\\s*${extension}\\s*$`), "").trim() : name;
-      return (extension && extension === currentOwnProfile?.extension) ||
+      return extension ? extension === currentOwnProfile?.extension :
         normalizedTypingText(cleanName) === normalizedTypingText(currentOwnProfile?.name);
     });
     if (elements.length === 0 || onlySelf) {

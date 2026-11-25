@@ -45,7 +45,7 @@ Les notifications du navigateur sont **toujours actives lorsque 3CX n'a pas le f
 
 Pour la **conversation ouverte**, un nouveau message reçu déclenche l'alerte quand tu consultes un autre onglet ou une autre fenêtre. Lorsque tu regardes 3CX, ce message ne déclenche ni son ni notification supplémentaire. Tes propres envois et le chargement de l'historique restent silencieux. Un clic sur la notification ramène à la conversation correspondante. Le choix **Silencieux** coupe le son du thème sans désactiver les alertes visuelles du navigateur.
 
-Dans les groupes, les portraits ou initiales des personnes en train d'écrire accompagnent les points animés. Le thème utilise les identités indiquées par 3CX ; si aucun nom n'est fourni, seuls les points apparaissent. Il ne remplace pas un prénom ambigu par le portrait d'un autre contact.
+Dans les groupes, les portraits ou initiales des personnes en train d'écrire accompagnent les points animés. Le thème utilise les identités indiquées par 3CX ; si aucun nom n'est fourni, seuls les points apparaissent. Chaque nom annoncé est reconnu séparément, avec priorité à l'identifiant natif et au nom complet. Un prénom seul n'est utilisé que s'il désigne une seule personne ; un nom de famille ne déclenche pas le portrait d'un collègue qui porte ce prénom.
 
 ## Photo de profil animée
 
