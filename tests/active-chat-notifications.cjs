@@ -9,7 +9,7 @@ const fixtureSource=source.slice(0,start)+`
   spy(){playCustomNotification=options=>window.sounds.push(options);},
   controls:ensureControls,scan:scanActiveChatNotifications,
   suppress(){suppressAnimationsUntil=performance.now()+1200;},
-  enable(value){preferences.activeChatDesktop=value;},
+  volume(value){preferences.notificationVolume=value;},
   audioTest(){customNotificationSound={url:'fixture.wav',volume:1};preferences.notificationSound=true;
     ensureNotificationAudioContext=()=>null;lastNotificationAt=-Infinity;
     prepareNotificationAudio=()=>new Promise(resolve=>window.resolveAudio=()=>resolve({pause(){},play(){window.audioPlays++;return Promise.resolve();},currentTime:0}));},
@@ -30,6 +30,7 @@ let passed=0;const check=(value,label)=>{assert(value,label);passed++;};
    await page.goto('https://decindustrie.3cx.no:5001/fixture#/chat/21');
    await page.evaluate(permission=>{
     window.focused=false;window.hidden=true;window.sounds=[];window.notices=[];window.permissionCalls=0;window.audioPlays=0;window.focusCalls=0;
+    localStorage.setItem('decSlackActiveChatDesktopNotifications','false');
     Object.defineProperty(document,'hidden',{get:()=>window.hidden});document.hasFocus=()=>window.focused;
     window.requestAnimationFrame=()=>0;window.focus=()=>window.focusCalls++;
     window.Notification=class{static permission=permission;static async requestPermission(){window.permissionCalls++;return this.permission='granted';}
@@ -74,9 +75,9 @@ let passed=0;const check=(value,label)=>{assert(value,label);passed++;};
   await page.evaluate(()=>addMessage('Identique'));await settle(page);
   await page.evaluate(()=>addMessage('Identique'));await settle(page);
   check(await page.evaluate(()=>sounds.length===5),'Two identical messages in the same minute are distinct arrivals');
-  await page.evaluate(()=>{api.enable(false);addMessage('Son seul');});await settle(page);
-  check(await page.evaluate(()=>sounds.length===6&&notices.length===5),'Desktop setting can be disabled independently of sound');
-  await page.evaluate(()=>{api.enable(true);focused=true;dispatchEvent(new Event('focus'));});
+  await page.evaluate(()=>{localStorage.setItem('decSlackActiveChatDesktopNotifications','false');addMessage('Toujours actif');});await settle(page);
+  check(await page.evaluate(()=>sounds.length===6&&notices.length===6),'Old opt-out setting cannot disable desktop notifications');
+  await page.evaluate(()=>{focused=true;dispatchEvent(new Event('focus'));});
   check(await page.evaluate(()=>notices.every(notice=>notice.closed)),'Returning to 3CX closes its active-chat desktop notices');
   await page.evaluate(()=>{focused=false;api.suppress();addMessage('Chargement après navigation');});await settle(page);
   check(await page.evaluate(()=>sounds.length===6),'Initial route-settling window remains silent');
@@ -100,12 +101,18 @@ let passed=0;const check=(value,label)=>{assert(value,label);passed++;};
   const permission=await make('default');await permission.evaluate(()=>{api.controls();addMessage('Pas encore autorisé');});await settle(permission);
   check(await permission.evaluate(()=>sounds.length===1&&notices.length===0&&permissionCalls===0),'Missing permission keeps sound and never opens an unsolicited permission prompt');
   await permission.locator('[data-dec-control="sound"]').click();
-  await permission.getByRole('switch',{name:'Notifications du navigateur pour la conversation ouverte'}).click();
+  await permission.getByRole('button',{name:'Autoriser les notifications du navigateur'}).click();
   check(await permission.evaluate(()=>permissionCalls===1&&Notification.permission==='granted'),'Desktop permission is requested only by the user control');
   await permission.evaluate(()=>addMessage('Autorisation accordée'));await settle(permission);
   check(await permission.evaluate(()=>notices.length===1),'Granted permission enables desktop alerts');
+  check(await permission.getByRole('switch',{includeHidden:true}).count()===0 &&
+    await permission.getByRole('button',{name:'Autoriser les notifications du navigateur',includeHidden:true}).count()===0,
+    'Granted desktop notifications have no opt-out control');
+  await permission.evaluate(()=>{api.volume(0);addMessage('Notification visuelle à volume nul');});await settle(permission);
+  check(await permission.evaluate(()=>notices.length===2),'Zero volume does not disable desktop notifications');
   const denied=await make('denied');await denied.evaluate(()=>{api.controls();addMessage('Permission bloquée');});await settle(denied);
-  check(await denied.getByRole('switch',{name:'Notifications du navigateur pour la conversation ouverte',includeHidden:true}).isDisabled(),'Denied permission has a disabled control');
+  check(await denied.getByText('Notifications bloquées dans les réglages du site.',{exact:true}).count()===1 &&
+    await denied.getByRole('switch',{includeHidden:true}).count()===0,'Denied permission shows status without a toggle');
   check(await denied.evaluate(()=>sounds.length===1&&notices.length===0),'Browser refusal does not prevent sound');
   const delayed=await make();await delayed.evaluate(()=>{api.audioTest();api.play({onlyWhenAway:true});focused=true;hidden=false;resolveAudio();});await settle(delayed);
   check(await delayed.evaluate(()=>audioPlays===0),'Returning before audio finishes loading cancels delayed playback');

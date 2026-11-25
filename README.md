@@ -39,7 +39,9 @@ Dans **Tout** et **Liens**, le petit interrupteur **Liens Explorateur** permet a
 
 ## Notifications et saisie
 
-Dans le menu **cloche**, choisis le son et active si besoin **Notification du navigateur**. Le navigateur demande son autorisation uniquement après un clic sur ce réglage. Si les notifications du site 3CX sont déjà autorisées, aucune nouvelle autorisation n'est nécessaire.
+Dans le menu **cloche**, choisis le son et règle son volume de **0 à 300 %**. **100 %** correspond au niveau habituel ; au-dessus, le moteur audio amplifie le son. Ce réglage est mémorisé dans le navigateur et s'applique aussi aux préécoutes. Relâcher le curseur permet d'écouter le niveau choisi. **0 %** coupe le son tout en conservant les notifications visuelles.
+
+Les notifications du navigateur sont **toujours actives lorsque 3CX n'a pas le focus**, si le site a l'autorisation du navigateur ; le thème ne propose plus d'interrupteur pour les désactiver. Si nécessaire, clique sur **Autoriser les notifications du navigateur** dans le menu cloche. Aucune demande d'autorisation ne s'ouvre sans cette action.
 
 Pour la **conversation ouverte**, un nouveau message reçu déclenche l'alerte quand tu consultes un autre onglet ou une autre fenêtre. Lorsque tu regardes 3CX, ce message ne déclenche ni son ni notification supplémentaire. Tes propres envois et le chargement de l'historique restent silencieux. Un clic sur la notification ramène à la conversation correspondante. Le choix **Silencieux** coupe le son du thème sans désactiver les alertes visuelles du navigateur.
 

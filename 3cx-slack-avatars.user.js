@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         3CX Slack — thème, avatars et emojis
 // @namespace    https://decindustrie.3cx.no/
-// @version      2.0.0-beta.22
+// @version      2.0.0-beta.23
 // @description  Ajoute les noms, avatars, emojis, notifications et contrôles Slack à 3CX.
 // @author       DEC Industrie
 // @homepageURL  https://github.com/BriceWillus/3CX-modern-theme
@@ -69,7 +69,7 @@
   const STORAGE_LAST_SCRIPT_VERSION = "decSlackLastScriptVersion";
   const STORAGE_NOTIFICATION_SOUND = "decSlackNotificationSound";
   const STORAGE_NOTIFICATION_SOUND_ID = "decSlackNotificationSoundId";
-  const STORAGE_ACTIVE_CHAT_DESKTOP = "decSlackActiveChatDesktopNotifications";
+  const STORAGE_NOTIFICATION_VOLUME = "decSlackNotificationVolume";
   const STORAGE_CHAT_SESSION_ID = "decSlackChatSessionId";
   const STORAGE_OWN_PROFILE = "decSlackOwnProfile";
   const CUSTOM_EMOJI_CLASS = "dec-slack-custom-emoji";
@@ -146,6 +146,9 @@
   let notificationAudioLoadPromise = null;
   let notificationAudioLoadError = null;
   let notificationAudioContext = null;
+  let notificationMasterGain = null;
+  let notificationMediaSource = null;
+  let notificationBufferSource = null;
   let notificationAudioBuffer = null;
   let notificationAudioBufferUrl = "";
   let lastNotificationAt = -Infinity;
@@ -212,6 +215,11 @@
     return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallbackValue;
   }
 
+  function normalizeNotificationVolume(value) {
+    const volume = Number(value);
+    return Number.isFinite(volume) ? Math.max(0, Math.min(300, Math.round(volume))) : 100;
+  }
+
   function hexToRgb(hex) {
     const value = normalizeHex(hex).slice(1);
     return {
@@ -256,7 +264,7 @@
     controlsCollapsed: readSetting(STORAGE_CONTROLS_COLLAPSED, "false") === "true",
     notificationSound: readSetting(STORAGE_NOTIFICATION_SOUND, "true") !== "false",
     notificationSoundId: readSetting(STORAGE_NOTIFICATION_SOUND_ID, ""),
-    activeChatDesktop: readSetting(STORAGE_ACTIVE_CHAT_DESKTOP, "true") !== "false",
+    notificationVolume: normalizeNotificationVolume(readSetting(STORAGE_NOTIFICATION_VOLUME, "100")),
   };
 
   function applyAccentVariables() {
@@ -345,17 +353,17 @@
       ? "Déplier la barre de recherche"
       : "Replier la barre de recherche";
 
-    const soundEnabled = Boolean(customNotificationSound);
+    const soundEnabled = Boolean(customNotificationSound) && preferences.notificationVolume > 0;
     soundButton.dataset.active = String(soundEnabled);
     soundButton.dataset.available = String(customNotificationSounds.size > 0);
     soundButton.textContent = soundEnabled ? "🔔" : "🔕";
-    soundButton.title = soundEnabled
-      ? `Son de notification : ${customNotificationSound.label}`
+    soundButton.title = customNotificationSound
+      ? `Son de notification : ${customNotificationSound.label} · ${preferences.notificationVolume} %`
       : "Notifications personnalisées silencieuses";
     soundButton.setAttribute(
       "aria-label",
-      soundEnabled
-        ? `Choisir le son de notification. Son actuel : ${customNotificationSound.label}`
+      customNotificationSound
+        ? `Choisir le son de notification. Son actuel : ${customNotificationSound.label}. Volume : ${preferences.notificationVolume} %`
         : "Choisir le son de notification. Mode silencieux actif",
     );
     renderNotificationSoundMenu();
@@ -416,7 +424,7 @@
     const desktopPermission = browserNotificationPermission();
     const menuSignature = JSON.stringify([
       options.map(({ id, label, detail }) => [id, label, detail, id === selectedId]),
-      desktopPermission, preferences.activeChatDesktop,
+      desktopPermission,
     ]);
     if (menu.dataset.decSoundMenuSignature === menuSignature) {
       return;
@@ -431,6 +439,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "dec-slack-sound-option";
+      button.style.scrollMarginTop = "90px";
       button.dataset.soundId = option.id;
       button.dataset.active = String(selected);
       button.setAttribute("role", "option");
@@ -456,38 +465,61 @@
     });
     fragment.appendChild(sounds);
 
-    const desktop = document.createElement("button");
-    const desktopEnabled = desktopPermission === "granted" && preferences.activeChatDesktop;
-    desktop.type = "button";
-    desktop.className = "dec-slack-sound-option dec-slack-desktop-switch";
-    desktop.dataset.active = String(desktopEnabled);
-    desktop.setAttribute("role", "switch");
-    desktop.setAttribute("aria-label", "Notifications du navigateur pour la conversation ouverte");
-    desktop.setAttribute("aria-checked", String(desktopEnabled));
-    desktop.disabled = ["denied", "unsupported"].includes(desktopPermission);
-    desktop.style.borderTop = "1px solid var(--slack-line,#56525b)";
-    desktop.style.marginTop = "5px";
-    const check = document.createElement("span");
-    check.className = "dec-slack-sound-option-check";
-    check.setAttribute("aria-hidden", "true");
-    check.textContent = desktopEnabled ? "✓" : "";
-    const label = document.createElement("span");
-    label.className = "dec-slack-sound-option-label";
-    label.textContent = desktopPermission === "default" ? "Autoriser les notifications" : "Notification du navigateur";
-    const detail = document.createElement("small");
-    detail.textContent = desktopPermission === "denied" ? "Bloquées dans les réglages du site" :
-      desktopPermission === "unsupported" ? "Indisponibles dans ce navigateur" : "Conversation ouverte, hors focus uniquement";
-    desktop.append(check, label, detail);
-    desktop.addEventListener("click", async () => {
-      if (browserNotificationPermission() === "granted") preferences.activeChatDesktop = !preferences.activeChatDesktop;
-      else {
-        try { preferences.activeChatDesktop = await window.Notification.requestPermission() === "granted"; }
-        catch { preferences.activeChatDesktop = false; }
-      }
-      writeSetting(STORAGE_ACTIVE_CHAT_DESKTOP, String(preferences.activeChatDesktop));
-      renderNotificationSoundMenu();
+    const volumeControl = document.createElement("div");
+    volumeControl.style.cssText = "position:sticky;top:-8px;z-index:2;padding:10px 8px 7px;border-bottom:1px solid var(--slack-line,#56525b);margin-bottom:5px;background:var(--slack-panel,#242429)";
+    const volumeLabel = document.createElement("label");
+    volumeLabel.htmlFor = "dec-slack-notification-volume";
+    volumeLabel.style.cssText = "display:flex;justify-content:space-between;gap:12px;font-size:12px;margin-bottom:7px";
+    const output = document.createElement("output");
+    output.setAttribute("for", "dec-slack-notification-volume");
+    output.dataset.decNotificationVolume = "true";
+    output.textContent = `${preferences.notificationVolume} %`;
+    volumeLabel.append("Volume du son", output);
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.id = "dec-slack-notification-volume";
+    slider.min = "0"; slider.max = "300"; slider.step = "1";
+    slider.value = String(preferences.notificationVolume);
+    slider.setAttribute("aria-label", "Volume des notifications");
+    slider.setAttribute("aria-valuetext", `${preferences.notificationVolume} %`);
+    slider.style.cssText = "display:block;width:100%;margin:0;accent-color:var(--dec-accent,#4a154b);cursor:pointer";
+    slider.addEventListener("input", () => {
+      preferences.notificationVolume = normalizeNotificationVolume(slider.value);
+      writeSetting(STORAGE_NOTIFICATION_VOLUME, String(preferences.notificationVolume));
+      output.textContent = `${preferences.notificationVolume} %`;
+      slider.setAttribute("aria-valuetext", output.textContent);
+      applyNotificationVolume();
+      updateControls();
     });
-    fragment.appendChild(desktop);
+    slider.addEventListener("change", () => playCustomNotification({ preview:true }));
+    const limits = document.createElement("div");
+    limits.style.cssText = "display:flex;justify-content:space-between;font-size:10px;color:var(--slack-muted,#b8b5bc);margin-top:4px";
+    const minimum = document.createElement("span"), maximum = document.createElement("span");
+    minimum.textContent = "0 %"; maximum.textContent = "300 %";
+    limits.append(minimum, maximum);
+    volumeControl.append(volumeLabel, slider, limits);
+    fragment.insertBefore(volumeControl, sounds);
+
+    if (desktopPermission === "default") {
+      const allow = document.createElement("button");
+      allow.type = "button";
+      allow.className = "dec-slack-sound-option";
+      const allowLabel = document.createElement("span");
+      allowLabel.className = "dec-slack-sound-option-label";
+      allowLabel.textContent = "Autoriser les notifications du navigateur";
+      allow.appendChild(allowLabel);
+      allow.addEventListener("click", async () => {
+        try { await window.Notification.requestPermission(); } catch { /* Le son reste disponible. */ }
+        renderNotificationSoundMenu();
+      });
+      fragment.appendChild(allow);
+    } else if (desktopPermission !== "granted") {
+      const status = document.createElement("p");
+      status.style.cssText = "padding:4px 8px;margin:0;font-size:11px;color:var(--slack-muted,#b8b5bc)";
+      status.textContent = desktopPermission === "denied" ? "Notifications bloquées dans les réglages du site." :
+        "Notifications du navigateur indisponibles.";
+      fragment.appendChild(status);
+    }
 
     menu.dataset.decSoundMenuSignature = menuSignature;
     menu.replaceChildren(fragment);
@@ -617,6 +649,7 @@
     });
 
     notificationSoundMenu()?.addEventListener("keydown", (event) => {
+      if (event.target.matches?.('input[type="range"]')) return;
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
       }
@@ -1334,11 +1367,6 @@
   }
 
   function ensureNotificationAudioContext() {
-    // Sur Firefox, HTMLAudio est plus fiable en arrière-plan et évite les
-    // différences de suspension d'AudioContext entre Chrome et Gecko.
-    if (IS_FIREFOX) {
-      return null;
-    }
     if (notificationAudioContext) {
       return notificationAudioContext;
     }
@@ -1350,13 +1378,51 @@
 
     try {
       notificationAudioContext = new AudioContextClass();
+      notificationMasterGain = notificationAudioContext.createGain();
+      notificationMasterGain.gain.value = preferences.notificationVolume / 100;
+      notificationMasterGain.connect(notificationAudioContext.destination);
       return notificationAudioContext;
     } catch {
+      notificationAudioContext = null;
+      notificationMasterGain = null;
       return null;
     }
   }
 
+  function applyNotificationVolume(audio = notificationAudio, definition = customNotificationSound) {
+    const multiplier = preferences.notificationVolume / 100;
+    if (notificationMasterGain) {
+      notificationMasterGain.gain.setValueAtTime(multiplier, notificationAudioContext.currentTime);
+    }
+    if (audio && definition) {
+      audio.volume = Math.max(0, Math.min(1, definition.volume * (notificationMediaSource ? 1 : multiplier)));
+    }
+  }
+
+  function routeNotificationMedia(audio, context) {
+    if (!context || !notificationMasterGain || audio !== notificationAudio ||
+        typeof context.createMediaElementSource !== "function") return;
+    try {
+      const url = new URL(audio.src, window.location.href);
+      // Une URL distante sans CORS serait rendue muette par Web Audio.
+      if (!["blob:", "data:"].includes(url.protocol) && url.origin !== window.location.origin) return;
+      if (!notificationMediaSource) {
+        notificationMediaSource = context.createMediaElementSource(audio);
+        notificationMediaSource.connect(notificationMasterGain);
+      }
+    } catch { /* Conserver la lecture HTMLAudio lorsqu'elle est disponible. */ }
+  }
+
+  function stopNotificationBuffer() {
+    const source = notificationBufferSource;
+    notificationBufferSource = null;
+    if (source) { try { source.stop(); } catch { /* Source déjà terminée. */ } }
+  }
+
   function clearNotificationAudio() {
+    stopNotificationBuffer();
+    notificationMediaSource?.disconnect();
+    notificationMediaSource = null;
     notificationAudio?.pause();
     notificationAudio = null;
     notificationAudioLoadPromise = null;
@@ -1436,7 +1502,7 @@
       notificationAudio &&
       notificationAudio.dataset.decSoundUrl === customNotificationSound.url
     ) {
-      notificationAudio.volume = customNotificationSound.volume;
+      applyNotificationVolume();
       return Promise.resolve(notificationAudio);
     }
 
@@ -1463,25 +1529,30 @@
 
         notificationAudioObjectUrl = playbackUrl.startsWith("blob:") ? playbackUrl : "";
         notificationAudio = new Audio(playbackUrl);
+        const audio = notificationAudio;
         notificationAudio.dataset.decSoundUrl = definition.url;
         notificationAudio.preload = "auto";
-        notificationAudio.volume = definition.volume;
+        applyNotificationVolume(audio, definition);
 
         const audioContext = ensureNotificationAudioContext();
         if (audioContext && bytes) {
           try {
-            notificationAudioBuffer = await audioContext.decodeAudioData(bytes.slice(0));
+            const buffer = await audioContext.decodeAudioData(bytes.slice(0));
+            if (customNotificationSound?.url !== definition.url || notificationAudio !== audio) return null;
+            notificationAudioBuffer = buffer;
             notificationAudioBufferUrl = definition.url;
           } catch (error) {
+            if (customNotificationSound?.url !== definition.url || notificationAudio !== audio) return null;
             notificationAudioBuffer = null;
             notificationAudioBufferUrl = "";
             notificationAudioLoadError = error;
           }
         }
 
-        return notificationAudio;
+        return customNotificationSound?.url === definition.url && notificationAudio === audio ? audio : null;
       })
       .catch((error) => {
+        if (customNotificationSound?.url !== definition.url) return null;
         notificationAudioLoadError = error;
         // Dernier repli : la lecture directe d'une URL audio ne nécessite pas
         // que le serveur autorise fetch/CORS dans Firefox.
@@ -1489,7 +1560,7 @@
           notificationAudio = new Audio(definition.url);
           notificationAudio.dataset.decSoundUrl = definition.url;
           notificationAudio.preload = "auto";
-          notificationAudio.volume = definition.volume;
+          applyNotificationVolume(notificationAudio, definition);
           return notificationAudio;
         } catch {
           return null;
@@ -1506,7 +1577,8 @@
   }
 
   function playCustomNotification({ preview = false, onlyWhenAway = false } = {}) {
-    if (!preferences.notificationSound || !customNotificationSound || (onlyWhenAway && notificationPageHasFocus())) {
+    if (!preferences.notificationSound || !customNotificationSound || preferences.notificationVolume === 0 ||
+        (onlyWhenAway && notificationPageHasFocus())) {
       return;
     }
 
@@ -1528,6 +1600,7 @@
 
     void prepareNotificationAudio().then((audio) => {
       if (!preferences.notificationSound || customNotificationSound?.url !== requestedSound.url ||
+          preferences.notificationVolume === 0 ||
           (onlyWhenAway && notificationPageHasFocus())) {
         return;
       }
@@ -1550,6 +1623,7 @@
         void resumeContext.then(() => {
           if (
             !preferences.notificationSound ||
+            preferences.notificationVolume === 0 ||
             customNotificationSound?.url !== requestedSound.url ||
             (onlyWhenAway && notificationPageHasFocus())
           ) {
@@ -1558,15 +1632,26 @@
 
           const source = audioContext.createBufferSource();
           const gain = audioContext.createGain();
+          stopNotificationBuffer();
+          audio.pause();
           source.buffer = notificationAudioBuffer;
           gain.gain.value = requestedSound.volume;
           source.connect(gain);
-          gain.connect(audioContext.destination);
+          gain.connect(notificationMasterGain);
+          applyNotificationVolume(audio, requestedSound);
+          notificationBufferSource = source;
+          source.onended = () => {
+            source.disconnect(); gain.disconnect();
+            if (notificationBufferSource === source) notificationBufferSource = null;
+          };
           source.start(0);
         });
         return;
       }
 
+      stopNotificationBuffer();
+      routeNotificationMedia(audio, audioContext);
+      applyNotificationVolume(audio, requestedSound);
       audio.pause();
       audio.currentTime = 0;
       const playback = audio.play();
@@ -5340,7 +5425,7 @@
   }
 
   function showActiveChatDesktopNotification(state, record) {
-    if (!preferences.activeChatDesktop || notificationPageHasFocus() || browserNotificationPermission() !== "granted") return;
+    if (notificationPageHasFocus() || browserNotificationPermission() !== "granted") return;
     const tag = `dec-3cx-open-chat-${state.id}`;
     try {
       activeChatDesktopNotices.get(tag)?.close();
