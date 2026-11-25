@@ -3534,3 +3534,10 @@ html.dec-slack-ui-v2 .dec-v2-message img.dec-slack-custom-emoji {
   height: 26px !important;
   border-radius: 2px !important;
 }
+
+/* Les portraits GIF se superposent à l'image native (z-index:1).
+   Les pastilles 3CX restent au-dessus, dans l'en-tête et dans Équipe. */
+app-avatar .avatar-container.dec-animated-avatar-ready
+  > :is(.status-indicator, [data-qa="status-indicator"]) {
+  z-index: 2 !important;
+}
